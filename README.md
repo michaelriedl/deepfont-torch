@@ -51,6 +51,8 @@ Description of the DeepFont architecture and implementation details.
 
 ## Dataset
 
+The original dataset can be found [here](https://www.dropbox.com/scl/fo/l7ip8qs7f7bcf3mom3vrh/AH1fN2bwEm072FBpjdyRzw4?rlkey=pq1doxi1kmoxqut6j00smxyh4&e=1&st=vzbptgqt&dl=0).
+
 Information about the dataset used for training and evaluation.
 
 ## Results
