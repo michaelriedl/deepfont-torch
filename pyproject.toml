@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "A PyTorch implementation of DeepFont for font recognition."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["torch>=2.9.1", "numpy>=2.3.5"]
+dependencies = [
+    "torch>=2.9.1",
+    "numpy>=2.3.5",
+    "albumentations>=2.0.8",
+    "Pillow>=12.0.0",
+]
 
 [dependency-groups]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff"]
