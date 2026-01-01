@@ -9,6 +9,11 @@ dependencies = [
     "numpy>=2.3.5",
     "albumentations>=2.0.8",
     "Pillow>=12.0.0",
+    "jupyterlab>=4.5.1",
+    "matplotlib>=3.10.8",
+    "torchinfo>=1.8.0",
+    "torchviz>=0.0.3",
+    "graphviz>=0.21",
 ]
 
 [dependency-groups]
