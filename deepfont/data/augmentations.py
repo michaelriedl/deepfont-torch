@@ -2,7 +2,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-import albumentations as A
+import albumentations as A  # noqa: N812
 from albumentations import RandomScale
 from albumentations.core.type_definitions import Targets
 from albumentations.core.transforms_interface import DualTransform
