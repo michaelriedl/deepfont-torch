@@ -1,4 +1,6 @@
 # DeepFont-Torch
+![Testing](https://github.com/michaelriedl/deepfont-torch/actions/workflows/pytest.yml/badge.svg)
+![Formatting](https://github.com/michaelriedl/deepfont-torch/actions/workflows/ruff.yml/badge.svg)
 
 A PyTorch implementation of DeepFont for font recognition.
 

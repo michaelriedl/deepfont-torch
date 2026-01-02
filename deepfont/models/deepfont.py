@@ -29,7 +29,7 @@ class DeepFontAE(nn.Module):
             the image from the latent representation.
     """
 
-    def __init__(self, output_activation: str = None):
+    def __init__(self, output_activation: str | None = None):
         """Initializes the DeepFontAE autoencoder architecture.
 
         Constructs the encoder-decoder network with configurable output activation.
