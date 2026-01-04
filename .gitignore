@@ -1,5 +1,10 @@
 # Custom for repository
+dev/
 results/
+data/*
+!data/*_examples/
+!data/README.md
+!data/fontlist.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -149,7 +154,6 @@ dmypy.json
 
 # Lightning-Hydra-Template
 configs/local/default.yaml
-/data/
 /logs/
 .env
 
