@@ -34,6 +34,7 @@ uv sync
 - Additional dependencies listed in `pyproject.toml`
 
 ## Usage
+Here we provide example code snippets for training and inference using the DeepFont model.
 
 ### Training
 
@@ -125,6 +126,34 @@ The main architectural differences between the two models:
 The original dataset can be found [here](https://www.dropbox.com/scl/fo/l7ip8qs7f7bcf3mom3vrh/AH1fN2bwEm072FBpjdyRzw4?rlkey=pq1doxi1kmoxqut6j00smxyh4&e=1&st=vzbptgqt&dl=0).
 
 Information about the dataset used for training and evaluation.
+
+### Data Augmentation
+
+In the subsections below, we will also discuss the data augmentation techniques applied to both synthetic and real data, which are crucial for improving model generalization.
+
+All augmentation figures shown below are generated from [notebooks/data_augmentations_visualized.ipynb](notebooks/data_augmentations_visualized.ipynb), which can be rerun to reproduce the images in `assets/`.
+
+#### Data Augmentations For Synthetic Data
+
+For synthetic font images, we apply augmentations that improve robustness to rendering and illumination shifts while preserving class identity. A key transformation is the grayscale gradient overlay, which simulates directional lighting across the glyph region. This gradient augmentation was not well documented in the original paper, but had to be reverse-engineered from the provided code and figures.
+
+**Greyscale gradient overlay examples (synthetic):**
+
+![Greyscale Gradient Examples](assets/gradient_examples.png)
+
+In addition to the gradient overlay, we apply standard augmentations such as random rotations, scaling, and contrast adjustments to further enhance the diversity of synthetic training samples. The scaling augmentation is based on the parameters mentioned in the original paper.
+
+**Synthetic pipeline examples:**
+
+![Synthetic Augmentation Examples](assets/synthetic_augmentation_examples.png)
+
+#### Data Augmentations For Real Data
+
+For real font images, we apply a stochastic augmentation pipeline to better match real-world capture conditions (noise, contrast variations, and other appearance perturbations used during training).
+
+**Real-image pipeline examples:**
+
+![Real Augmentation Examples](assets/real_augmentation_examples.png)
 
 ## Results
 

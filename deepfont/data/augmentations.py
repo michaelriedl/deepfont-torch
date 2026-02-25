@@ -11,10 +11,12 @@ from albumentations.augmentations.geometric.functional import resize
 IMAGE_SIZE = 105
 SQUEEZE_RATIO = 1 / 2.5
 SCALE_LIMIT = 0.15
+EVAL_SCALE_LIMIT = 0.4
 ROTATE_BOUNDS = (-45, 45)
 SHEAR_BOUNDS = (-15, 15)
 BLUR_LIMIT = (2.5, 3.5)
-NOISE_LIMIT = (8.9, 9.1)
+NOISE_MEAN_RANGE = (0.0, 0.0)
+NOISE_STD_RANGE = (0.05, 0.15)
 ROT_FLIP_PROB = 0.5
 
 
@@ -111,7 +113,7 @@ class RandomWidthScale(RandomScale):
     ) -> np.ndarray:
         height, width = img.shape[:2]
         new_size = int(height), max(int(width * scale), int(height))
-        return resize(img, *new_size, interpolation)
+        return resize(img, new_size, interpolation)
 
 
 class ResizeHeightSqueezeWidth(DualTransform):
@@ -138,8 +140,6 @@ class ResizeHeightSqueezeWidth(DualTransform):
         interpolation: OpenCV interpolation flag specifying the resampling algorithm.
             Should be one of: cv2.INTER_NEAREST, cv2.INTER_LINEAR, cv2.INTER_CUBIC,
             cv2.INTER_AREA, or cv2.INTER_LANCZOS4. Default: cv2.INTER_LINEAR.
-        always_apply: If True, the transform is always applied regardless of p.
-            Default: None.
         p: Probability of applying the transform. Only used if always_apply is False.
             Default: 1.
 
@@ -162,10 +162,9 @@ class ResizeHeightSqueezeWidth(DualTransform):
         height: int,
         width_scale: float,
         interpolation: int = cv2.INTER_LINEAR,
-        always_apply: bool | None = None,
         p: float = 1,
     ):
-        super().__init__(p, always_apply)
+        super().__init__(p)
         self.height = height
         self.width_scale = width_scale
         self.interpolation = interpolation
@@ -177,8 +176,7 @@ class ResizeHeightSqueezeWidth(DualTransform):
         new_width = max(int(height_scale * self.width_scale * width), self.height)
         return resize(
             img,
-            self.height,
-            new_width,
+            (self.height, new_width),
             interpolation=interpolation,
         )
 
@@ -272,19 +270,19 @@ def _synthetic_image_pipeline(image: np.ndarray, aug_prob: float) -> np.ndarray:
     # Create the augmentation pipeline
     augmentations = A.Compose(
         [
-            ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, always_apply=True),
-            RandomWidthScale(scale_limit=SCALE_LIMIT, always_apply=True),
+            ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
+            RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
             A.InvertImg(p=aug_prob),
             A.Affine(
                 rotate=ROTATE_BOUNDS,
                 shear=SHEAR_BOUNDS,
-                mode=cv2.BORDER_REFLECT,
+                border_mode=cv2.BORDER_REFLECT,
                 p=aug_prob,
             ),
-            A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, always_apply=True),
+            A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
             A.GaussianBlur(blur_limit=0, sigma_limit=BLUR_LIMIT, p=aug_prob),
             A.RandomBrightnessContrast(p=aug_prob),
-            A.GaussNoise(var_limit=NOISE_LIMIT, mean=0.0, p=aug_prob),
+            A.GaussNoise(std_range=NOISE_STD_RANGE, mean_range=NOISE_MEAN_RANGE, p=aug_prob),
             A.RandomRotate90(p=ROT_FLIP_PROB),
             A.HorizontalFlip(p=ROT_FLIP_PROB),
             A.VerticalFlip(p=ROT_FLIP_PROB),
@@ -333,16 +331,16 @@ def _real_image_pipeline(image: np.ndarray, aug_prob: float) -> np.ndarray:
     # Create the real image pipeline
     real_augmentations = A.Compose(
         [
-            ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, always_apply=True),
-            RandomWidthScale(scale_limit=SCALE_LIMIT, always_apply=True),
+            ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
+            RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
             A.InvertImg(p=aug_prob),
             A.Affine(
                 rotate=ROTATE_BOUNDS,
                 shear=SHEAR_BOUNDS,
-                mode=cv2.BORDER_REFLECT,
+                border_mode=cv2.BORDER_REFLECT,
                 p=aug_prob,
             ),
-            A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, always_apply=True),
+            A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
             A.RandomBrightnessContrast(p=aug_prob),
             A.RandomRotate90(p=ROT_FLIP_PROB),
             A.HorizontalFlip(p=ROT_FLIP_PROB),
@@ -396,9 +394,9 @@ def eval_pipeline(image: np.ndarray, num_image_crops: int) -> np.ndarray:
     # Create the augmentations
     augmentations = A.Compose(
         [
-            ResizeHeightSqueezeWidth(IMAGE_SIZE, 1 / 2.5, always_apply=True),
-            RandomWidthScale(scale_limit=0.4, always_apply=True),
-            A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, always_apply=True),
+            ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
+            RandomWidthScale(scale_limit=EVAL_SCALE_LIMIT, p=1.0),
+            A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
         ]
     )
     # Create the image crops
