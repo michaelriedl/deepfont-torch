@@ -7,16 +7,16 @@ that renames or removes a parameter produces a clear, descriptive failure rather
 a silent regression.
 
 Test classes:
-    TestConstants                 -- module-level hyper-parameter values
-    TestAddGreyscaleGradient      -- standalone NumPy gradient function
-    TestRandomWidthScale          -- custom albumentations width-only scaling transform
-    TestResizeHeightSqueezeWidth  -- custom DualTransform for height + width resize
-    TestAugmentationPipelineDispatch -- dispatcher routing and error handling
-    TestSyntheticPipeline         -- end-to-end synthetic image pipeline
-    TestRealPipeline              -- end-to-end real image pipeline
-    TestEvalPipeline              -- test-time augmentation (TTA) eval pipeline
-    TestAlbumentationsAPIContract -- explicit tests for albumentations parameter names
-                                     and import paths that have historically changed
+    TestConstants                       -- module-level hyper-parameter values
+    TestAddGreyscaleGradient            -- standalone NumPy gradient function
+    TestRandomWidthScale                -- custom albumentations width-only scaling transform
+    TestResizeHeightSqueezeWidth        -- custom DualTransform for height + width resize
+    TestAugmentationPipelineDispatch    -- dispatcher routing and error handling
+    TestSyntheticPipeline               -- end-to-end synthetic image pipeline
+    TestRealPipeline                    -- end-to-end real image pipeline
+    TestEvalPipeline                    -- test-time augmentation (TTA) eval pipeline
+    TestAlbumentationsAPIContract       -- explicit tests for albumentations parameter names
+                                           and import paths that have historically changed
 """
 
 import inspect
@@ -48,7 +48,7 @@ from deepfont.data.augmentations import (
     add_greyscale_gradient,
 )
 
-# ── Shared fixtures ────────────────────────────────────────────────────────────
+# Shared fixtures
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def wide_image() -> np.ndarray:
 
 @pytest.fixture
 def tall_image() -> np.ndarray:
-    """A tall, narrow image that triggers the width-clamping code paths."""
+    """A tall, narrow image that triggers the width clamping code paths."""
     rng = np.random.default_rng(42)
     return rng.integers(0, 256, size=(400, 80), dtype=np.uint8)
 
@@ -72,11 +72,11 @@ def square_image() -> np.ndarray:
     return rng.integers(0, 256, size=(200, 200), dtype=np.uint8)
 
 
-# ── Module-level constants ─────────────────────────────────────────────────────
+# Module-level constants
 
 
 class TestConstants:
-    """Verify that all module-level hyper-parameters have the expected values.
+    """Verify that all module-level hyperparameters have the expected values.
 
     Pinning these values means any accidental edit to the augmentations module
     immediately causes a test failure, giving the same protection as locking a
@@ -114,11 +114,11 @@ class TestConstants:
         assert ROT_FLIP_PROB == pytest.approx(0.5)
 
 
-# ── add_greyscale_gradient ─────────────────────────────────────────────────────
+# add_greyscale_gradient
 
 
 class TestAddGreyscaleGradient:
-    """Tests for the standalone gradient-overlay function."""
+    """Tests for the standalone gradient overlay function."""
 
     def test_output_shape_preserved(self, wide_image):
         result = add_greyscale_gradient(wide_image)
@@ -158,11 +158,11 @@ class TestAddGreyscaleGradient:
         assert result.shape == img.shape
 
 
-# ── RandomWidthScale ───────────────────────────────────────────────────────────
+# RandomWidthScale
 
 
 class TestRandomWidthScale:
-    """Tests for the width-only scaling transform."""
+    """Tests for the width only scaling transform."""
 
     def test_is_subclass_of_random_scale(self):
         transform = RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0)
@@ -190,7 +190,7 @@ class TestRandomWidthScale:
         assert result.shape[1] == expected_width
 
     def test_width_never_below_height(self):
-        # Height=80, Width=50 -- downscaling would produce width < height.
+        # Height=80, Width=50: downscaling would produce width < height.
         narrow = np.zeros((80, 50), dtype=np.uint8)
         transform = RandomWidthScale(scale_limit=0.5, p=1.0)
         result = transform.apply(narrow, scale=0.5, interpolation=cv2.INTER_LINEAR)
@@ -203,11 +203,11 @@ class TestRandomWidthScale:
         assert result.shape[1] >= result.shape[0]
 
 
-# ── ResizeHeightSqueezeWidth ───────────────────────────────────────────────────
+# ResizeHeightSqueezeWidth
 
 
 class TestResizeHeightSqueezeWidth:
-    """Tests for the combined height-resize / width-squeeze DualTransform."""
+    """Tests for the combined height resize and width squeeze DualTransform."""
 
     def test_is_subclass_of_dual_transform(self):
         transform = ResizeHeightSqueezeWidth(height=IMAGE_SIZE, width_scale=SQUEEZE_RATIO)
@@ -251,11 +251,11 @@ class TestResizeHeightSqueezeWidth:
         assert result.shape[1] >= IMAGE_SIZE
 
 
-# ── augmentation_pipeline (dispatcher) ────────────────────────────────────────
+# augmentation_pipeline dispatcher
 
 
 class TestAugmentationPipelineDispatch:
-    """Tests for the public dispatcher that routes to the correct sub-pipeline."""
+    """Tests for the public dispatcher that routes to the correct subpipeline."""
 
     def test_raises_value_error_for_unknown_image_type(self, wide_image):
         with pytest.raises(ValueError, match="synthetic.*real"):
@@ -274,11 +274,11 @@ class TestAugmentationPipelineDispatch:
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
 
 
-# ── Synthetic pipeline ─────────────────────────────────────────────────────────
+# Synthetic pipeline
 
 
 class TestSyntheticPipeline:
-    """End-to-end tests for the synthetic image augmentation pipeline."""
+    """End to end tests for the synthetic image augmentation pipeline."""
 
     @pytest.mark.parametrize("aug_prob", [0.0, 0.5, 1.0])
     def test_output_shape(self, wide_image, aug_prob):
@@ -309,11 +309,11 @@ class TestSyntheticPipeline:
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
 
 
-# ── Real pipeline ──────────────────────────────────────────────────────────────
+# Real pipeline
 
 
 class TestRealPipeline:
-    """End-to-end tests for the real image augmentation pipeline."""
+    """End to end tests for the real image augmentation pipeline."""
 
     @pytest.mark.parametrize("aug_prob", [0.0, 0.5, 1.0])
     def test_output_shape(self, wide_image, aug_prob):
@@ -343,11 +343,11 @@ class TestRealPipeline:
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
 
 
-# ── Eval pipeline ──────────────────────────────────────────────────────────────
+# Eval pipeline
 
 
 class TestEvalPipeline:
-    """End-to-end tests for the test-time augmentation (TTA) eval pipeline."""
+    """End to end tests for the test time augmentation (TTA) eval pipeline."""
 
     @pytest.mark.parametrize("num_crops", [1, 5, 10])
     def test_output_shape(self, wide_image, num_crops):
@@ -364,7 +364,7 @@ class TestEvalPipeline:
         assert int(result.max()) <= 255
 
     def test_crops_are_stochastic(self, wide_image):
-        # At ±40% width scaling, 10 crops of a natural image should not all be identical.
+        # At 40% width scaling, 10 crops of a natural image should not all be identical.
         result = eval_pipeline(wide_image, 10)
         all_same = all(np.array_equal(result[0], result[i]) for i in range(1, 10))
         assert not all_same
@@ -380,7 +380,7 @@ class TestEvalPipeline:
         assert result.shape == (3, IMAGE_SIZE, IMAGE_SIZE), f"Failed for input shape {shape}"
 
 
-# ── Albumentations API contract ────────────────────────────────────────────────
+# Albumentations API contract
 
 
 class TestAlbumentationsAPIContract:
@@ -394,7 +394,7 @@ class TestAlbumentationsAPIContract:
     Each test corresponds to a change observed between albumentations 1.x and 2.x.
     """
 
-    # ── Import paths ──────────────────────────────────────────────────────────
+    # Import paths
 
     def test_dual_transform_importable_from_core(self):
         """albumentations.core.transforms_interface.DualTransform must exist."""
@@ -412,7 +412,7 @@ class TestAlbumentationsAPIContract:
         """albumentations.RandomScale must be directly importable."""
         assert RandomScale is not None
 
-    # ── Transform availability ────────────────────────────────────────────────
+    # Transform availability
 
     def test_invert_img_available(self):
         """A.InvertImg must exist and produce a same-shape result."""
@@ -436,7 +436,7 @@ class TestAlbumentationsAPIContract:
         assert result.shape == (105, 105)
 
     def test_random_rotate90_available(self):
-        """A.RandomRotate90 must exist and produce a 105×105 result."""
+        """A.RandomRotate90 must exist and produce a 105x105 result."""
         t = A.RandomRotate90(p=1.0)
         img = np.zeros((105, 105), dtype=np.uint8)
         result = t(image=img)["image"]
@@ -460,10 +460,10 @@ class TestAlbumentationsAPIContract:
         result = pipeline(image=np.zeros((105, 105), dtype=np.uint8))
         assert "image" in result
 
-    # ── Parameter names that changed between albumentations 1.x and 2.x ──────
+    # Parameter names that changed between albumentations 1.x and 2.x
 
     def test_gaussnoise_accepts_std_range_parameter(self):
-        """albumentations>=2.0 renamed var_limit -> std_range for GaussNoise."""
+        """albumentations>=2.0 renamed var_limit to std_range for GaussNoise."""
         t = A.GaussNoise(std_range=NOISE_STD_RANGE, p=1.0)
         img = np.full((105, 105), 128, dtype=np.uint8)
         result = t(image=img)["image"]
@@ -502,7 +502,7 @@ class TestAlbumentationsAPIContract:
         result = t(image=img)["image"]
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
 
-    # ── RandomScale.apply() signature ────────────────────────────────────────
+    # RandomScale.apply() signature
 
     def test_random_scale_apply_signature_has_scale_param(self):
         """RandomScale.apply() must accept a 'scale' parameter.
