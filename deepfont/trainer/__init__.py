@@ -1,6 +1,6 @@
 """DeepFont trainer package.
 
-Provides a Lightning Fabric–based training framework with a shared base class
+Provides a Lightning Fabric-based training framework with a shared base class
 and two concrete implementations:
 
 - :class:`PretrainTrainer` — trains :class:`~deepfont.models.deepfont.DeepFontAE`
