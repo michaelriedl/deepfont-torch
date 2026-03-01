@@ -36,8 +36,12 @@ Typical workflow::
 
 from .base import BaseTrainer
 from .config import TrainerConfig, FinetuneConfig, PretrainConfig
-from .finetune import FinetuneTrainer
 from .pretrain import PretrainTrainer
+
+try:
+    from .finetune import FinetuneTrainer
+except ImportError:
+    FinetuneTrainer = None  # type: ignore[assignment, misc]
 
 __all__ = [
     "BaseTrainer",
