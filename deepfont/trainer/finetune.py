@@ -115,7 +115,7 @@ class FinetuneTrainer(BaseTrainer):
         self,
         model: nn.Module,
     ) -> tuple[Optimizer, LRScheduler | None]:
-        """Return an Adam optimiser over trainable parameters only.
+        """Return an Adam optimizer over trainable parameters only.
 
         Parameters with ``requires_grad=False`` (i.e. frozen encoder layers
         when ``encoder_weights_path`` is set) are excluded automatically.
@@ -196,7 +196,7 @@ class FinetuneTrainer(BaseTrainer):
 
         Args:
             ckpt_path: Optional path to a Fabric checkpoint to load weights
-                from.  If ``None`` the model is evaluated with its initialised
+                from.  If ``None`` the model is evaluated with its initialized
                 weights (only useful if :meth:`fit` was called beforehand and
                 you are using this method to evaluate mid-run state).
 
