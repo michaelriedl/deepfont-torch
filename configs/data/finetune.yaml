@@ -1,0 +1,20 @@
+# Configuration for the DeepFont supervised fine-tuning stage.
+# _target_ will point to the LightningDataModule once it is implemented.
+
+# --- Train / val data ---
+bcf_store_file: ??? # path to the BCF store file containing font images
+label_file: ??? # path to the label CSV/JSON file mapping image IDs to font classes
+aug_prob: 0.5
+image_normalization: "0to1" # "0to1" or "-1to1"
+num_images_to_cache: 0 # pre-load this many images into RAM; 0 = disabled
+
+# --- TTA evaluation data (used by evaluate(), not by fit()) ---
+eval_bcf_store_file: ""
+eval_label_file: ""
+num_image_crops: 15 # number of augmented crops per image during TTA
+
+# --- DataLoader ---
+batch_size: 64
+val_batch_size: 64
+num_workers: 4
+train_ratio: 0.8
