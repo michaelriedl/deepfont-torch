@@ -1,0 +1,6 @@
+# DeepFont convolutional classifier for supervised fine-tuning.
+# https://github.com/mriedl/deepfont-torch
+
+_target_: deepfont.models.deepfont.DeepFont
+
+num_out: 2383 # number of font classes
