@@ -1,0 +1,11 @@
+# @package _global_
+# Early-stopping callback — stops training when val_loss stops improving.
+# All fields correspond to EarlyStoppingCallback.__init__ parameters.
+# Instantiate with: hydra.utils.instantiate(cfg.callbacks.early_stopping)
+
+_target_: deepfont.callbacks.EarlyStoppingCallback
+monitor: val_loss
+patience: 5
+min_delta: 0.0
+mode: min
+verbose: true

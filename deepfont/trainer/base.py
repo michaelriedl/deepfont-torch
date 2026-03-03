@@ -84,6 +84,10 @@ class BaseTrainer(ABC):
         self.current_epoch: int = 0
         self.should_stop: bool = False
         self._is_launched: bool = False
+        # Set during fit(), cleared afterwards; available to callbacks via trainer.model etc.
+        self.model: nn.Module | None = None
+        self.optimizer: Optimizer | None = None
+        self.scheduler: LRScheduler | None = None
 
     # -------------------------------------------------------------------------
     # Abstract interface — subclasses must implement these
@@ -173,6 +177,11 @@ class BaseTrainer(ABC):
         train_loader = self.fabric.setup_dataloaders(train_loader)
         val_loader = self.fabric.setup_dataloaders(val_loader)
 
+        # Expose training objects on self so callbacks can access them.
+        self.model = model
+        self.optimizer = optimizer
+        self.scheduler = scheduler
+
         # Build resumable state dict (Fabric serializes model/optim state dicts)
         state: dict[str, Any] = {"model": model, "optimizer": optimizer}
         if scheduler is not None:
@@ -180,6 +189,8 @@ class BaseTrainer(ABC):
 
         if ckpt_path is not None:
             self._load_checkpoint(state, ckpt_path)
+
+        self.fabric.call("on_fit_start", trainer=self)
 
         # ---- Epoch loop ----
         while not self.should_stop:
@@ -201,6 +212,13 @@ class BaseTrainer(ABC):
 
         self.should_stop = False  # reset for subsequent fit() calls
 
+        self.fabric.call("on_fit_end", trainer=self)
+
+        # Clear training-object references so callbacks don't hold stale state.
+        self.model = None
+        self.optimizer = None
+        self.scheduler = None
+
     # -------------------------------------------------------------------------
     # Train / val loops
     # -------------------------------------------------------------------------
@@ -213,7 +231,7 @@ class BaseTrainer(ABC):
     ) -> None:
         """Run one training epoch."""
         model.train()
-        self.fabric.call("on_train_epoch_start")
+        self.fabric.call("on_train_epoch_start", trainer=self)
 
         iterable = self._progbar(
             train_loader,
@@ -222,7 +240,7 @@ class BaseTrainer(ABC):
         )
 
         for batch_idx, batch in enumerate(iterable):
-            self.fabric.call("on_train_batch_start", batch, batch_idx)
+            self.fabric.call("on_train_batch_start", batch=batch, batch_idx=batch_idx, trainer=self)
 
             # Defer gradient sync during accumulation steps (speeds up DDP).
             is_accumulating = (batch_idx + 1) % self.config.grad_accum_steps != 0
@@ -238,6 +256,7 @@ class BaseTrainer(ABC):
                         optimizer,
                         max_norm=self.config.gradient_clip_val,
                     )
+                self.fabric.call("on_before_optimizer_step", trainer=self, optimizer=optimizer)
                 optimizer.step()
                 optimizer.zero_grad()
                 self.global_step += 1
@@ -247,10 +266,16 @@ class BaseTrainer(ABC):
                     log_dict["epoch"] = float(self.current_epoch)
                     self.fabric.log_dict(log_dict, step=self.global_step)
 
-            self.fabric.call("on_train_batch_end", outputs, batch, batch_idx)
+            self.fabric.call(
+                "on_train_batch_end",
+                outputs=outputs,
+                batch=batch,
+                batch_idx=batch_idx,
+                trainer=self,
+            )
             self._progbar_postfix(iterable, outputs, prefix="train")
 
-        self.fabric.call("on_train_epoch_end")
+        self.fabric.call("on_train_epoch_end", trainer=self)
 
     def _val_loop(
         self,
@@ -264,7 +289,7 @@ class BaseTrainer(ABC):
             ``{"val_loss": tensor(0.42), "val_acc": tensor(0.87)}``.
         """
         model.eval()
-        self.fabric.call("on_validation_epoch_start")
+        self.fabric.call("on_validation_epoch_start", trainer=self)
 
         accumulated: dict[str, list[torch.Tensor]] = {}
 
@@ -275,9 +300,17 @@ class BaseTrainer(ABC):
                 desc=f"Epoch {self.current_epoch} [val]",
             )
             for batch_idx, batch in enumerate(iterable):
-                self.fabric.call("on_validation_batch_start", batch, batch_idx)
+                self.fabric.call(
+                    "on_validation_batch_start", batch=batch, batch_idx=batch_idx, trainer=self
+                )
                 outputs = self.validation_step(model, batch, batch_idx)
-                self.fabric.call("on_validation_batch_end", outputs, batch, batch_idx)
+                self.fabric.call(
+                    "on_validation_batch_end",
+                    outputs=outputs,
+                    batch=batch,
+                    batch_idx=batch_idx,
+                    trainer=self,
+                )
 
                 for k, v in outputs.items():
                     accumulated.setdefault(k, []).append(v.detach())
@@ -294,7 +327,7 @@ class BaseTrainer(ABC):
             + " | ".join(f"{k}={v.item():.4f}" for k, v in epoch_metrics.items())
         )
 
-        self.fabric.call("on_validation_epoch_end")
+        self.fabric.call("on_validation_epoch_end", trainer=self, val_metrics=epoch_metrics)
         model.train()
         return epoch_metrics
 

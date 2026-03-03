@@ -1,0 +1,15 @@
+# @package _global_
+# Reconstruction visualizer callback — saves input/reconstruction grids to disk.
+# For use with PretrainTrainer ONLY (expects batch to be a plain image tensor).
+# All fields correspond to ReconstructionVisualizerCallback.__init__ parameters.
+# Instantiate with: hydra.utils.instantiate(cfg.callbacks.reconstruction_visualizer)
+
+_target_: deepfont.callbacks.ReconstructionVisualizerCallback
+save_every_n_epochs: 5
+num_samples: 8
+output_dir: reconstructions
+# Set value_range to match image_normalization in PretrainConfig:
+#   "0to1"  -> value_range: [0.0, 1.0]
+#   "-1to1" -> value_range: [-1.0, 1.0]
+#   null    -> auto-normalise via make_grid(normalize=True)
+value_range: null
