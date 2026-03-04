@@ -55,9 +55,7 @@ class FinetuneTrainer(BaseTrainer):
         super().__init__(config, loggers=loggers, callbacks=callbacks)
         self.config: FinetuneConfig = config
 
-    # -------------------------------------------------------------------------
     # BaseTrainer abstract interface
-    # -------------------------------------------------------------------------
 
     def create_model(self) -> nn.Module:
         """Return a :class:`~deepfont.models.deepfont.DeepFont` instance.
@@ -178,9 +176,7 @@ class FinetuneTrainer(BaseTrainer):
         acc = (logits.argmax(dim=1) == labels).float().mean()
         return {"loss": loss, "acc": acc}
 
-    # -------------------------------------------------------------------------
     # TTA evaluation
-    # -------------------------------------------------------------------------
 
     def evaluate(self, ckpt_path: str | None = None) -> dict[str, float]:
         """Run test-time augmentation (TTA) evaluation over the eval dataset.

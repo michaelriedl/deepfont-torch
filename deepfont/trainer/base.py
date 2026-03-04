@@ -38,31 +38,21 @@ class BaseTrainer(ABC):
             step scheduler     # epoch-level LR update
             save checkpoint    # if due
 
-    Subclasses **must** implement
-    --------------------------------
-    ``create_model()``
-        Return an ``nn.Module`` (not yet moved to device).
+    Subclasses must implement:
+        create_model(): Return an ``nn.Module`` (not yet moved to device).
+        create_dataloaders(): Return ``(train_loader, val_loader)``.
+        create_optimizer(model): Return ``(optimizer, scheduler | None)``.
+        training_step(model, batch, batch_idx): Forward pass for one training batch.
+            Must return a ``dict`` with at least a ``"loss"`` key.
+            Do not call ``backward()`` here.
+        validation_step(model, batch, batch_idx): Forward pass for one validation batch.
+            Returns a ``dict`` of scalar tensors that are averaged over the epoch
+            and logged with a ``"val_"`` prefix.
 
-    ``create_dataloaders()``
-        Return ``(train_loader, val_loader)``.
-
-    ``create_optimizer(model)``
-        Return ``(optimizer, scheduler | None)``.
-
-    ``training_step(model, batch, batch_idx)``
-        Forward pass for one training batch.  Must return a ``dict`` with at
-        least a ``"loss"`` key.  Do **not** call ``backward()`` here.
-
-    ``validation_step(model, batch, batch_idx)``
-        Forward pass for one validation batch.  Returns a ``dict`` of scalar
-        tensors that are averaged over the epoch and logged with a ``"val_"``
-        prefix.
-
-    Note
-    ----
-    Call :meth:`_build_scheduler` inside ``create_optimizer`` to create an
-    LR scheduler from a string name and kwargs, keeping scheduler creation
-    consistent across subclasses.
+    Note:
+        Call :meth:`_build_scheduler` inside ``create_optimizer`` to create an
+        LR scheduler from a string name and kwargs, keeping scheduler creation
+        consistent across subclasses.
     """
 
     def __init__(
@@ -89,9 +79,7 @@ class BaseTrainer(ABC):
         self.optimizer: Optimizer | None = None
         self.scheduler: LRScheduler | None = None
 
-    # -------------------------------------------------------------------------
     # Abstract interface — subclasses must implement these
-    # -------------------------------------------------------------------------
 
     @abstractmethod
     def create_model(self) -> nn.Module:
@@ -147,9 +135,7 @@ class BaseTrainer(ABC):
             epoch and logged with a ``"val_"`` prefix.
         """
 
-    # -------------------------------------------------------------------------
     # Main entry point
-    # -------------------------------------------------------------------------
 
     def fit(self, ckpt_path: str | None = None) -> None:
         """Run the full training loop.
@@ -219,9 +205,7 @@ class BaseTrainer(ABC):
         self.optimizer = None
         self.scheduler = None
 
-    # -------------------------------------------------------------------------
     # Train / val loops
-    # -------------------------------------------------------------------------
 
     def _train_loop(
         self,
@@ -331,9 +315,7 @@ class BaseTrainer(ABC):
         model.train()
         return epoch_metrics
 
-    # -------------------------------------------------------------------------
     # Checkpointing
-    # -------------------------------------------------------------------------
 
     def _save_checkpoint(self, state: dict[str, Any]) -> None:
         """Save a Fabric checkpoint, augmented with loop-state scalars."""
@@ -361,9 +343,7 @@ class BaseTrainer(ABC):
             f"Resumed from {path} (epoch={self.current_epoch}, step={self.global_step})"
         )
 
-    # -------------------------------------------------------------------------
     # Helpers
-    # -------------------------------------------------------------------------
 
     def _ensure_launched(self) -> None:
         """Call ``fabric.launch()`` at most once, even across fit/evaluate."""
