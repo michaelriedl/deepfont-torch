@@ -8,7 +8,8 @@ Callbacks:
     ModelCheckpointCallback: Keep the best-N checkpoints based on a monitored validation metric.
     LearningRateMonitorCallback: Log the current learning rate(s) to the Fabric logger each epoch.
     GradientNormMonitorCallback: Compute and log gradient norms before each optimizer step.
-    ReconstructionVisualizerCallback: Save input / reconstruction image grids to disk (pretrain stage only).
+    ReconstructionVisualizerCallback: Save input / reconstruction image grids to disk
+    (pretrain stage only).
 
 Hydra integration:
     Each callback ships with a matching ``*Config`` dataclass that can be
