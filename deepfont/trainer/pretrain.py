@@ -53,9 +53,7 @@ class PretrainTrainer(BaseTrainer):
         # Narrow the type so subclass code has access to PretrainConfig fields
         self.config: PretrainConfig = config
 
-    # -------------------------------------------------------------------------
     # BaseTrainer abstract interface
-    # -------------------------------------------------------------------------
 
     def create_model(self) -> nn.Module:
         """Return a :class:`~deepfont.models.deepfont.DeepFontAE` instance."""
@@ -156,9 +154,7 @@ class PretrainTrainer(BaseTrainer):
         reconstructed = model(batch)
         return {"loss": self._reconstruction_loss(reconstructed, batch)}
 
-    # -------------------------------------------------------------------------
     # Extra utility
-    # -------------------------------------------------------------------------
 
     def save_encoder_weights(self, ckpt_path: str, output_path: str) -> None:
         """Extract encoder weights from a checkpoint and save them in raw format.
@@ -182,9 +178,7 @@ class PretrainTrainer(BaseTrainer):
 
         self.fabric.print(f"Saved encoder weights → {output_path}")
 
-    # -------------------------------------------------------------------------
     # Private helpers
-    # -------------------------------------------------------------------------
 
     def _reconstruction_loss(
         self,

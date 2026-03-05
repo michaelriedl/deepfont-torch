@@ -59,9 +59,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-# ---------------------------------------------------------------------------
 # Shared helpers
-# ---------------------------------------------------------------------------
 
 _TORCHVISION_AVAILABLE = importlib.util.find_spec("torchvision") is not None
 
@@ -102,9 +100,7 @@ def _tv(x: float) -> torch.Tensor:
     return torch.tensor(x)
 
 
-# ---------------------------------------------------------------------------
 # EarlyStoppingCallback
-# ---------------------------------------------------------------------------
 
 
 class TestEarlyStoppingCallbackConfig(unittest.TestCase):
@@ -126,7 +122,7 @@ class TestEarlyStoppingCallback(unittest.TestCase):
 
         self.CB = EarlyStoppingCallback
 
-    # ── construction ─────────────────────────────────────────────────────────
+    # construction
 
     def test_invalid_mode_raises(self):
         with self.assertRaises(ValueError):
@@ -146,7 +142,7 @@ class TestEarlyStoppingCallback(unittest.TestCase):
         self.assertEqual(cb._best, float("-inf"))
         self.assertEqual(cb._wait, 0)
 
-    # ── on_fit_start ─────────────────────────────────────────────────────────
+    # on_fit_start
 
     def test_on_fit_start_resets_min(self):
         cb = self.CB(mode="min", patience=3)
@@ -174,7 +170,7 @@ class TestEarlyStoppingCallback(unittest.TestCase):
         self.assertEqual(cb._wait, 0)
         self.assertEqual(cb._best, float("inf"))
 
-    # ── mode=min: improvement ─────────────────────────────────────────────
+    # mode=min: improvement
 
     def test_first_metric_sets_best(self):
         cb = self.CB(mode="min", patience=3)
@@ -228,7 +224,7 @@ class TestEarlyStoppingCallback(unittest.TestCase):
         self.assertEqual(cb._wait, 0)
         self.assertFalse(trainer.should_stop)
 
-    # ── min_delta ─────────────────────────────────────────────────────────
+    # min_delta
 
     def test_min_delta_change_below_threshold_not_improvement(self):
         cb = self.CB(mode="min", patience=3, min_delta=0.1)
@@ -245,7 +241,7 @@ class TestEarlyStoppingCallback(unittest.TestCase):
         self.assertEqual(cb._wait, 0)
         self.assertAlmostEqual(cb._best, 0.38, places=5)
 
-    # ── mode=max ──────────────────────────────────────────────────────────
+    # mode=max
 
     def test_mode_max_improvement_increases_best(self):
         cb = self.CB(mode="max", patience=3, monitor="val_acc")
@@ -270,7 +266,7 @@ class TestEarlyStoppingCallback(unittest.TestCase):
         cb.on_validation_epoch_end(trainer, {"val_acc": _tv(0.5)})
         self.assertTrue(trainer.should_stop)
 
-    # ── missing key ───────────────────────────────────────────────────────
+    # missing key
 
     def test_missing_monitor_key_does_not_change_state(self):
         cb = self.CB(monitor="val_loss", patience=3)
@@ -286,7 +282,7 @@ class TestEarlyStoppingCallback(unittest.TestCase):
         cb.on_validation_epoch_end(trainer, {"val_acc": _tv(0.5)})
         trainer.fabric.print.assert_called_once()
 
-    # ── verbose=False ─────────────────────────────────────────────────────
+    # verbose=False
 
     def test_verbose_false_no_print_on_stall_or_stop(self):
         cb = self.CB(mode="min", patience=2, verbose=False)
@@ -298,9 +294,7 @@ class TestEarlyStoppingCallback(unittest.TestCase):
         trainer.fabric.print.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
 # GradientNormMonitorCallback
-# ---------------------------------------------------------------------------
 
 
 class TestGradientNormMonitorCallbackConfig(unittest.TestCase):
@@ -328,7 +322,7 @@ class TestGradientNormMonitorCallback(unittest.TestCase):
         model.weight.grad = torch.tensor(grad_values, dtype=torch.float32)
         return model
 
-    # ── step-frequency gating ─────────────────────────────────────────────
+    # step-frequency gating
 
     def test_skips_logging_on_non_multiple_step(self):
         cb = self.CB(log_every_n_steps=10)
@@ -359,7 +353,7 @@ class TestGradientNormMonitorCallback(unittest.TestCase):
             cb.on_before_optimizer_step(trainer, None)
             trainer.fabric.log_dict.assert_called_once()
 
-    # ── model=None guard ──────────────────────────────────────────────────
+    # model=None guard
 
     def test_skips_when_model_is_none(self):
         cb = self.CB(log_every_n_steps=1)
@@ -367,7 +361,7 @@ class TestGradientNormMonitorCallback(unittest.TestCase):
         cb.on_before_optimizer_step(trainer, None)
         trainer.fabric.log_dict.assert_not_called()
 
-    # ── correctness of grad_norm value ────────────────────────────────────
+    # correctness of grad_norm value
 
     def test_l2_norm_value(self):
         """grad = [[1,0],[0,1]] → global L2 norm = sqrt(1²+0²+0²+1²) = √2."""
@@ -413,9 +407,7 @@ class TestGradientNormMonitorCallback(unittest.TestCase):
         self.assertEqual(kwargs["step"], 30)
 
 
-# ---------------------------------------------------------------------------
 # LearningRateMonitorCallback
-# ---------------------------------------------------------------------------
 
 
 class TestLearningRateMonitorCallbackConfig(unittest.TestCase):
@@ -433,7 +425,7 @@ class TestLearningRateMonitorCallback(unittest.TestCase):
 
         self.CB = LearningRateMonitorCallback
 
-    # ── no optimizer ──────────────────────────────────────────────────────
+    # no optimizer
 
     def test_no_optimizer_returns_without_logging(self):
         cb = self.CB()
@@ -441,7 +433,7 @@ class TestLearningRateMonitorCallback(unittest.TestCase):
         cb.on_train_epoch_start(trainer)
         trainer.fabric.log_dict.assert_not_called()
 
-    # ── single param group ────────────────────────────────────────────────
+    # single param group
 
     def test_single_group_logs_lr(self):
         model = nn.Linear(2, 2)
@@ -480,7 +472,7 @@ class TestLearningRateMonitorCallback(unittest.TestCase):
         self.assertIn("momentum", logged)
         self.assertAlmostEqual(logged["momentum"], 0.95, places=6)
 
-    # ── multiple param groups ─────────────────────────────────────────────
+    # multiple param groups
 
     def test_multiple_groups_logs_lr_group_keys(self):
         model = nn.Linear(4, 2)
@@ -509,7 +501,7 @@ class TestLearningRateMonitorCallback(unittest.TestCase):
         self.assertIn("momentum_group_1", logged)
         self.assertAlmostEqual(logged["momentum_group_0"], 0.85, places=6)
 
-    # ── _get_momentum static method ───────────────────────────────────────
+    # _get_momentum static method
 
     def test_get_momentum_adam(self):
         from deepfont.callbacks import LearningRateMonitorCallback
@@ -529,7 +521,7 @@ class TestLearningRateMonitorCallback(unittest.TestCase):
         pg = {"lr": 0.01}
         self.assertAlmostEqual(LearningRateMonitorCallback._get_momentum(pg), 0.0)
 
-    # ── step logged ───────────────────────────────────────────────────────
+    # step logged
 
     def test_logged_step_matches_global_step(self):
         model = nn.Linear(2, 2)
@@ -541,9 +533,7 @@ class TestLearningRateMonitorCallback(unittest.TestCase):
         self.assertEqual(kwargs["step"], 42)
 
 
-# ---------------------------------------------------------------------------
 # ModelCheckpointCallback
-# ---------------------------------------------------------------------------
 
 
 class TestModelCheckpointCallbackConfig(unittest.TestCase):
@@ -599,7 +589,7 @@ class TestModelCheckpointCallback(unittest.TestCase):
     def _trigger(self, cb, trainer, score: float, monitor: str = "val_loss"):
         cb.on_validation_epoch_end(trainer, {monitor: _tv(score)})
 
-    # ── construction ─────────────────────────────────────────────────────
+    # construction
 
     def test_invalid_mode_raises(self):
         with self.assertRaises(ValueError):
@@ -609,7 +599,7 @@ class TestModelCheckpointCallback(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.CB(save_top_k=0)
 
-    # ── on_fit_start ──────────────────────────────────────────────────────
+    # on_fit_start
 
     def test_on_fit_start_clears_top_k(self):
         cb = self.CB(save_top_k=3)
@@ -617,7 +607,7 @@ class TestModelCheckpointCallback(unittest.TestCase):
         cb.on_fit_start(_make_trainer())
         self.assertEqual(cb._top_k, [])
 
-    # ── save_top_k=1, mode=min ────────────────────────────────────────────
+    # save_top_k=1, mode=min
 
     def test_first_checkpoint_is_always_saved(self):
         cb = self.CB(monitor="val_loss", mode="min", save_top_k=1)
@@ -653,7 +643,7 @@ class TestModelCheckpointCallback(unittest.TestCase):
         self._trigger(cb, trainer, 0.3)  # better → evicts the 0.5 checkpoint
         self.assertFalse(os.path.exists(first_path))
 
-    # ── save_top_k=1, mode=max ────────────────────────────────────────────
+    # save_top_k=1, mode=max
 
     def test_mode_max_better_score_saved(self):
         cb = self.CB(monitor="val_acc", mode="max", save_top_k=1)
@@ -679,7 +669,7 @@ class TestModelCheckpointCallback(unittest.TestCase):
         self._trigger(cb, trainer, 0.8, "val_acc")  # better → evicts 0.5
         self.assertFalse(os.path.exists(first_path))
 
-    # ── save_top_k=3, mode=min ────────────────────────────────────────────
+    # save_top_k=3, mode=min
 
     def test_save_top_k_3_fills_without_eviction(self):
         cb = self.CB(monitor="val_loss", mode="min", save_top_k=3)
@@ -731,7 +721,7 @@ class TestModelCheckpointCallback(unittest.TestCase):
         for expected, actual in zip([0.5, 0.6, 0.7], top_scores):
             self.assertAlmostEqual(expected, actual, places=5)
 
-    # ── missing monitor key ───────────────────────────────────────────────
+    # missing monitor key
 
     def test_missing_monitor_key_skips_save(self):
         cb = self.CB(monitor="val_loss", mode="min", save_top_k=1)
@@ -745,7 +735,7 @@ class TestModelCheckpointCallback(unittest.TestCase):
         cb.on_validation_epoch_end(trainer, {"val_acc": _tv(0.9)})
         trainer.fabric.print.assert_called_once()
 
-    # ── not global zero ───────────────────────────────────────────────────
+    # not global zero
 
     def test_not_global_zero_does_not_save(self):
         cb = self.CB(monitor="val_loss", mode="min", save_top_k=1)
@@ -753,7 +743,7 @@ class TestModelCheckpointCallback(unittest.TestCase):
         self._trigger(cb, trainer, 0.5)
         trainer.fabric.save.assert_not_called()
 
-    # ── filename format ───────────────────────────────────────────────────
+    # filename format
 
     def test_checkpoint_filename_format(self):
         cb = self.CB(monitor="val_loss", mode="min", filename="best")
@@ -763,7 +753,7 @@ class TestModelCheckpointCallback(unittest.TestCase):
         ckpt_name = os.path.basename(cb._top_k[0][1])
         self.assertIn("best-epoch=0007-val_loss=0.1234", ckpt_name)
 
-    # ── scheduler presence in state dict ──────────────────────────────────
+    # scheduler presence in state dict
 
     def test_scheduler_included_in_save_when_present(self):
         from torch.optim.lr_scheduler import StepLR
@@ -786,9 +776,7 @@ class TestModelCheckpointCallback(unittest.TestCase):
         self.assertNotIn("scheduler", state_dict)
 
 
-# ---------------------------------------------------------------------------
 # ReconstructionVisualizerCallback
-# ---------------------------------------------------------------------------
 
 
 class TestReconstructionVisualizerCallbackConfig(unittest.TestCase):
@@ -827,13 +815,13 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
     def _batch(self, b: int = 4, h: int = 105, w: int = 105) -> torch.Tensor:
         return torch.rand(b, 1, h, w)
 
-    # ── construction ─────────────────────────────────────────────────────
+    # construction
 
     def test_initial_sample_inputs_is_none(self):
         cb = self.CB()
         self.assertIsNone(cb._sample_inputs)
 
-    # ── _is_save_epoch ────────────────────────────────────────────────────
+    # _is_save_epoch
 
     def test_is_save_epoch_multiples_of_period(self):
         cb = self.CB(save_every_n_epochs=5)
@@ -848,7 +836,7 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
             trainer = self._make_rkv_trainer(current_epoch=epoch)
             self.assertEqual(cb._is_save_epoch(trainer), expected, f"epoch={epoch}")
 
-    # ── on_validation_batch_start ─────────────────────────────────────────
+    # on_validation_batch_start
 
     def test_skips_non_zero_batch_idx(self):
         cb = self.CB(save_every_n_epochs=1, num_samples=4)
@@ -881,7 +869,7 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
         cb.on_validation_batch_start(self._batch(b=4), batch_idx=0, trainer=trainer)
         self.assertEqual(cb._sample_inputs.shape[0], 4)
 
-    # ── on_validation_epoch_end ───────────────────────────────────────────
+    # on_validation_epoch_end
 
     def test_skips_when_no_samples_captured(self):
         cb = self.CB(save_every_n_epochs=1, output_dir=self.output_dir)
