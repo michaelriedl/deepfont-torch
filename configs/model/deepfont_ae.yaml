@@ -1,0 +1,6 @@
+# DeepFont convolutional autoencoder for unsupervised pretraining.
+# https://github.com/mriedl/deepfont-torch
+
+_target_: deepfont.models.deepfont.DeepFontAE
+
+output_activation: null # null | "sigmoid" | "relu"
