@@ -63,7 +63,7 @@ class FinetuneTrainer(BaseTrainer):
         If ``config.encoder_weights_path`` is set, the pretrained AE encoder
         weights are loaded and frozen before training begins.
         """
-        model = DeepFont(num_out=self.config.num_classes)
+        model = DeepFont(num_classes=self.config.num_classes)
         if self.config.encoder_weights_path is not None:
             model.load_encoder_weights(self.config.encoder_weights_path)
         return model

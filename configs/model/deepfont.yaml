@@ -1,6 +1,31 @@
 # DeepFont convolutional classifier for supervised fine-tuning.
 # https://github.com/mriedl/deepfont-torch
+#
+# All values below are the paper defaults.  Override individual fields in
+# your experiment YAML or on the command line, e.g.:
+#   python train.py model.num_classes=100 model.dropout_rate=0.2
 
 _target_: deepfont.models.deepfont.DeepFont
 
-num_out: 2383 # number of font classes
+# Input / output
+in_channels: 1
+input_size: 105
+num_classes: 2383
+
+# Encoder architecture
+encoder_channels: [64, 128]
+encoder_kernel_sizes: [11, 5]
+encoder_strides: [2, 1]
+encoder_paddings: [0, 2]
+pool_kernel_size: 2
+use_encoder_batch_norm: true
+
+# Additional convolutional layers
+num_conv_layers: 3
+conv_channels: 256
+conv_kernel_size: 3
+use_conv_batch_norm: true
+
+# Fully-connected classification head
+fc_hidden_dims: [4096, 4096]
+dropout_rate: 0.1

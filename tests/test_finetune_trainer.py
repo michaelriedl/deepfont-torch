@@ -217,7 +217,7 @@ class TestCreateModel:
     def test_num_classes_respected(self):
         trainer = _make_trainer(num_classes=5)
         model = trainer.create_model()
-        assert model.num_out == 5
+        assert model.config.num_classes == 5
 
     def test_all_params_trainable_without_encoder_weights(self):
         """Without encoder_weights_path every parameter should require gradients."""

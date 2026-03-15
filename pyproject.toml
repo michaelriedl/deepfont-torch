@@ -18,6 +18,7 @@ dependencies = [
     "graphviz>=0.21",
     "lightning>=2.4.0",
     "tqdm>=4.0",
+    "pydantic>=2.12",
 ]
 
 [dependency-groups]

@@ -3,8 +3,117 @@ import logging
 import torch
 import torch.nn as nn
 
+from .config import DeepFontConfig, DeepFontAEConfig
+
 # A logger for this file
 logger = logging.getLogger(__name__)
+
+
+def _build_encoder(
+    in_channels: int,
+    channels: tuple[int, ...],
+    kernel_sizes: tuple[int, ...],
+    strides: tuple[int, ...],
+    paddings: tuple[int, ...],
+    pool_kernel_size: int,
+    use_batch_norm: bool,
+) -> nn.Sequential:
+    """Build a multi-stage convolutional encoder.
+
+    Each stage consists of ``Conv2d -> [BatchNorm2d] -> MaxPool2d -> ReLU``.
+
+    Args:
+        in_channels: Number of channels in the input image.
+        channels: Output channel count for each convolutional stage.
+        kernel_sizes: Kernel size for each stage's Conv2d.
+        strides: Stride for each stage's Conv2d.
+        paddings: Padding for each stage's Conv2d.
+        pool_kernel_size: Kernel size for MaxPool2d after each stage.
+        use_batch_norm: Whether to include BatchNorm2d after each Conv2d.
+
+    Returns:
+        A ``nn.Sequential`` module implementing the encoder.
+    """
+    layers: list[nn.Module] = []
+    prev_ch = in_channels
+    for ch, k, s, p in zip(channels, kernel_sizes, strides, paddings, strict=True):
+        layers.append(nn.Conv2d(prev_ch, ch, kernel_size=k, stride=s, padding=p))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm2d(ch))
+        layers.append(nn.MaxPool2d(kernel_size=pool_kernel_size))
+        layers.append(nn.ReLU())
+        prev_ch = ch
+    return nn.Sequential(*layers)
+
+
+def _build_decoder(
+    out_channels: int,
+    encoder_channels: tuple[int, ...],
+    encoder_kernel_sizes: tuple[int, ...],
+    encoder_strides: tuple[int, ...],
+    encoder_paddings: tuple[int, ...],
+    pool_kernel_size: int,
+    output_activation: str | None,
+) -> nn.Sequential:
+    """Build a decoder that mirrors the encoder structure.
+
+    For each encoder stage (processed in reverse), the decoder applies
+    ``Upsample -> ConvTranspose2d -> ReLU``, except the final layer which
+    omits the ReLU (or replaces it with the requested ``output_activation``).
+
+    The ``ConvTranspose2d`` at each stage uses the **same** kernel size, stride,
+    and padding as its corresponding encoder ``Conv2d``, which ensures the
+    transpose convolution inverts the spatial transform of the forward
+    convolution.
+
+    Args:
+        out_channels: Number of channels the decoder should produce (typically
+            equals the encoder's ``in_channels``).
+        encoder_channels: Channel counts from the encoder (in encoder order).
+        encoder_kernel_sizes: Kernel sizes from the encoder (in encoder order).
+        encoder_strides: Strides from the encoder (in encoder order).
+        encoder_paddings: Paddings from the encoder (in encoder order).
+        pool_kernel_size: Pool kernel size used in the encoder.
+        output_activation: Optional final activation (``"sigmoid"`` or ``"relu"``).
+
+    Returns:
+        A ``nn.Sequential`` module implementing the decoder.
+    """
+    layers: list[nn.Module] = []
+    n_stages = len(encoder_channels)
+    reversed_channels = list(reversed(encoder_channels))
+    reversed_kernel_sizes = list(reversed(encoder_kernel_sizes))
+    reversed_strides = list(reversed(encoder_strides))
+    reversed_paddings = list(reversed(encoder_paddings))
+
+    for i in range(n_stages):
+        in_ch = reversed_channels[i]
+        # Output channel: next reversed channel, or out_channels for the last stage
+        target_ch = reversed_channels[i + 1] if i < n_stages - 1 else out_channels
+        k = reversed_kernel_sizes[i]
+        s = reversed_strides[i]
+        p = reversed_paddings[i]
+
+        # Upsample to undo the MaxPool2d
+        layers.append(nn.Upsample(scale_factor=pool_kernel_size))
+        # ConvTranspose2d to undo the Conv2d
+        layers.append(nn.ConvTranspose2d(in_ch, target_ch, kernel_size=k, stride=s, padding=p))
+
+        # Add activation (ReLU for intermediate layers, optional for last)
+        is_last = i == n_stages - 1
+        if not is_last:
+            layers.append(nn.ReLU())
+
+    # Optional output activation
+    if output_activation is not None:
+        if output_activation == "sigmoid":
+            layers.append(nn.Sigmoid())
+        elif output_activation == "relu":
+            layers.append(nn.ReLU())
+        else:
+            raise ValueError(f"Unknown output activation function: {output_activation}")
+
+    return nn.Sequential(*layers)
 
 
 class DeepFontAE(nn.Module):
@@ -16,65 +125,73 @@ class DeepFontAE(nn.Module):
     while the decoder reconstructs the original image from this compressed form.
 
     The architecture uses:
-        - Encoder: Two convolutional layers with max pooling for feature extraction
+        - Encoder: Convolutional layers with max pooling for feature extraction
         - Decoder: Transposed convolutions and upsampling for reconstruction
 
     This model is typically pretrained on a large dataset of font images before
     the encoder weights are transferred to the DeepFont classifier for fine-tuning.
 
+    All architectural hyper-parameters (channel counts, kernel sizes, strides,
+    etc.) are controlled via a :class:`~deepfont.models.config.DeepFontAEConfig`
+    instance, whose defaults reproduce the original paper architecture.
+
     Attributes:
+        config: The frozen configuration used to build this model.
         encoder: Sequential module containing convolutional and pooling layers that
             compress the input image into a latent representation.
         decoder: Sequential module containing transposed convolutions that reconstruct
             the image from the latent representation.
     """
 
-    def __init__(self, output_activation: str | None = None):
+    def __init__(self, config: DeepFontAEConfig | None = None, **kwargs):
         """Initializes the DeepFontAE autoencoder architecture.
 
-        Constructs the encoder-decoder network with configurable output activation.
+        Constructs the encoder-decoder network from the provided configuration.
         The encoder uses standard convolutions with ReLU activations and max pooling,
-        while the decoder uses transposed convolutions for upsampling.
+        while the decoder mirrors the encoder using transposed convolutions and
+        upsampling.
 
         Args:
-            output_activation: Optional activation function to apply to the decoder's
-                final output. Options are:
-                - None: No activation (linear output)
-                - "sigmoid": Sigmoid activation, useful when input is normalized to [0, 1]
-                - "relu": ReLU activation, useful when input is normalized to [0, ∞)
-                Default is None.
+            config: A :class:`DeepFontAEConfig` controlling every architectural
+                parameter.  When ``None``, a default config is created from any
+                additional ``**kwargs`` (for backward compatibility).
+            **kwargs: Forwarded to :class:`DeepFontAEConfig` when *config* is
+                ``None``.  Accepted keys include ``output_activation``,
+                ``in_channels``, ``encoder_channels``, etc.
 
         Raises:
-            ValueError: If output_activation is not None, "sigmoid", or "relu".
+            ValueError: If *config* validation fails (e.g. mismatched tuple
+                lengths, invalid channel counts).
 
         Note:
             The choice of output activation should match your input normalization:
-            - [0, 1] normalization → use "sigmoid"
-            - [-1, 1] normalization → use None (or tanh, though not implemented)
-            - [0, 255] normalization → use None or "relu"
+            - [0, 1] normalization -> use "sigmoid"
+            - [-1, 1] normalization -> use None (or tanh, though not implemented)
+            - [0, 255] normalization -> use None or "relu"
         """
         super().__init__()
-        self.encoder = nn.Sequential(
-            nn.Conv2d(1, 64, kernel_size=11, stride=2),
-            nn.MaxPool2d(kernel_size=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=5, padding=2),
-            nn.MaxPool2d(kernel_size=2),
-            nn.ReLU(),
+        if config is None:
+            config = DeepFontAEConfig(**kwargs)
+        self.config = config
+
+        self.encoder = _build_encoder(
+            in_channels=config.in_channels,
+            channels=config.encoder_channels,
+            kernel_sizes=config.encoder_kernel_sizes,
+            strides=config.encoder_strides,
+            paddings=config.encoder_paddings,
+            pool_kernel_size=config.pool_kernel_size,
+            use_batch_norm=config.use_batch_norm,
         )
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2, padding=2, output_padding=1),
-            nn.ReLU(),
-            nn.Upsample(scale_factor=2),
-            nn.ConvTranspose2d(64, 1, kernel_size=11, stride=2),
+        self.decoder = _build_decoder(
+            out_channels=config.in_channels,
+            encoder_channels=config.encoder_channels,
+            encoder_kernel_sizes=config.encoder_kernel_sizes,
+            encoder_strides=config.encoder_strides,
+            encoder_paddings=config.encoder_paddings,
+            pool_kernel_size=config.pool_kernel_size,
+            output_activation=config.output_activation,
         )
-        if output_activation is not None:
-            if output_activation == "sigmoid":
-                self.decoder.add_module("sigmoid", nn.Sigmoid())
-            elif output_activation == "relu":
-                self.decoder.add_module("relu", nn.ReLU())
-            else:
-                raise ValueError(f"Unknown output activation function: {output_activation}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Performs a forward pass through the autoencoder.
@@ -84,17 +201,16 @@ class DeepFontAE(nn.Module):
         a loss (typically MSE or L1) during training.
 
         Args:
-            x: Input image tensor of shape (batch_size, 1, H, W) where H and W are
-                the height and width. Typically 105x105 for DeepFont, though the
-                docstring mentions 96x96.
+            x: Input image tensor of shape (batch_size, in_channels, H, W).
+                For the paper defaults, shape is (batch_size, 1, 105, 105).
 
         Returns:
-            Reconstructed image tensor of the same shape as input (batch_size, 1, H, W).
-            The output values depend on the configured output_activation.
+            Reconstructed image tensor.  The spatial dimensions may differ
+            slightly from the input when non-default encoder parameters are
+            used; with default settings the output shape equals the input shape.
 
         Note:
-            The actual input size should be 105x105 based on the DeepFont paper,
-            not 96x96 as mentioned in the original docstring.
+            The actual input size should be 105x105 based on the DeepFont paper.
         """
         x = self.encoder(x)
         x = self.decoder(x)
@@ -111,22 +227,28 @@ class DeepFont(nn.Module):
     for classification.
 
     The architecture follows:
-        1. Encoder: 2 conv layers with batch norm, pooling, and ReLU (can use pretrained weights)
-        2. Convolutional part: 3 conv layers with batch norm and ReLU for deeper features
-        3. Fully connected part: 3 FC layers with dropout for classification
+        1. Encoder: conv layers with optional batch norm, pooling, and ReLU
+           (can use pretrained weights)
+        2. Convolutional part: additional conv layers with batch norm and ReLU
+           for deeper features
+        3. Fully connected part: FC layers with dropout for classification
+
+    All architectural hyper-parameters are controlled via a
+    :class:`~deepfont.models.config.DeepFontConfig` instance, whose defaults
+    reproduce the original paper architecture.
 
     This model supports transfer learning by loading pretrained encoder weights from
     the autoencoder pretraining stage, which typically improves convergence and final
     accuracy compared to training from scratch.
 
     Attributes:
-        num_out: Number of output classes (fonts) to classify.
+        config: The frozen configuration used to build this model.
         encoder: Convolutional encoder layers, optionally loaded from pretrained autoencoder.
         conv_part: Additional convolutional layers for feature extraction.
         fc_part: Fully connected layers for final classification.
     """
 
-    def __init__(self, num_out: int):
+    def __init__(self, config: DeepFontConfig | None = None, **kwargs):
         """Initializes the DeepFont classification model.
 
         Constructs the full architecture including encoder, convolutional layers,
@@ -134,52 +256,79 @@ class DeepFont(nn.Module):
         initialized with pretrained weights using load_encoder_weights().
 
         Args:
-            num_out: The number of font classes to classify. This determines the
-                dimension of the final output layer. Should match the number of unique
-                fonts in your dataset.
+            config: A :class:`DeepFontConfig` controlling every architectural
+                parameter.  When ``None``, a default config is created from any
+                additional ``**kwargs`` (for backward compatibility).
+            **kwargs: Forwarded to :class:`DeepFontConfig` when *config* is
+                ``None``.  Accepted keys include ``num_classes``,
+                ``encoder_channels``, ``dropout_rate``, etc.
+
+        Raises:
+            ValueError: If *config* validation fails (e.g. spatial dimensions
+                reduced to zero, mismatched tuple lengths).
 
         Note:
-            The model expects input images of shape (batch_size, 1, 105, 105).
-            The encoder includes batch normalization layers, unlike the autoencoder
-            version, to improve training stability during supervised learning.
+            The model expects square input images whose size matches
+            ``config.input_size`` (default 105).  The encoder includes batch
+            normalization layers by default, unlike the autoencoder version.
         """
         super().__init__()
-        # Store the number of output classes
-        self.num_out = num_out
-        # Create the encoder part
-        self.encoder = nn.Sequential(
-            nn.Conv2d(1, 64, kernel_size=11, stride=2),
-            nn.BatchNorm2d(64),
-            nn.MaxPool2d(kernel_size=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=5, padding=2),
-            nn.BatchNorm2d(128),
-            nn.MaxPool2d(kernel_size=2),
-            nn.ReLU(),
+        if config is None:
+            config = DeepFontConfig(**kwargs)
+        self.config = config
+
+        # --- Encoder ---------------------------------------------------------
+        self.encoder = _build_encoder(
+            in_channels=config.in_channels,
+            channels=config.encoder_channels,
+            kernel_sizes=config.encoder_kernel_sizes,
+            strides=config.encoder_strides,
+            paddings=config.encoder_paddings,
+            pool_kernel_size=config.pool_kernel_size,
+            use_batch_norm=config.use_encoder_batch_norm,
         )
-        # Create the convolutional part
-        self.conv_part = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=3, padding="same"),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.Conv2d(256, 256, kernel_size=3, padding="same"),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.Conv2d(256, 256, kernel_size=3, padding="same"),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-        )
-        # Create the fully connected part
-        self.fc_part = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(12 * 12 * 256, 4096),
-            nn.Dropout(0.1),
-            nn.ReLU(),
-            nn.Linear(4096, 4096),
-            nn.Dropout(0.1),
-            nn.ReLU(),
-            nn.Linear(4096, num_out),
-        )
+
+        # --- Additional conv layers ------------------------------------------
+        conv_layers: list[nn.Module] = []
+        prev_ch = config.encoder_channels[-1]
+        for _ in range(config.num_conv_layers):
+            conv_layers.append(
+                nn.Conv2d(
+                    prev_ch,
+                    config.conv_channels,
+                    kernel_size=config.conv_kernel_size,
+                    padding="same",
+                )
+            )
+            if config.use_conv_batch_norm:
+                conv_layers.append(nn.BatchNorm2d(config.conv_channels))
+            conv_layers.append(nn.ReLU())
+            prev_ch = config.conv_channels
+        self.conv_part = nn.Sequential(*conv_layers)
+
+        # --- Fully-connected head --------------------------------------------
+        # Compute the spatial size after the encoder
+        spatial = config.input_size
+        for k, s, p in zip(
+            config.encoder_kernel_sizes,
+            config.encoder_strides,
+            config.encoder_paddings,
+            strict=True,
+        ):
+            spatial = (spatial - k + 2 * p) // s + 1
+            spatial = spatial // config.pool_kernel_size
+
+        flatten_dim = spatial * spatial * config.conv_channels
+
+        fc_layers: list[nn.Module] = [nn.Flatten()]
+        prev_dim = flatten_dim
+        for hidden_dim in config.fc_hidden_dims:
+            fc_layers.append(nn.Linear(prev_dim, hidden_dim))
+            fc_layers.append(nn.Dropout(config.dropout_rate))
+            fc_layers.append(nn.ReLU())
+            prev_dim = hidden_dim
+        fc_layers.append(nn.Linear(prev_dim, config.num_classes))
+        self.fc_part = nn.Sequential(*fc_layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Performs a forward pass through the classification network.
@@ -188,17 +337,17 @@ class DeepFont(nn.Module):
         fully connected layers to produce class logits for font classification.
 
         Args:
-            x: Input image tensor of shape (batch_size, 1, H, W) where H and W are
-                typically 105x105 for DeepFont (not 96x96 as originally documented).
+            x: Input image tensor of shape ``(batch_size, in_channels, H, W)``
+                where ``H = W = config.input_size`` (default 105).
 
         Returns:
-            Class logits tensor of shape (batch_size, num_out) containing raw scores
-            for each font class. Apply softmax to get probabilities, or use with
-            CrossEntropyLoss which applies softmax internally.
+            Class logits tensor of shape ``(batch_size, num_classes)`` containing
+            raw scores for each font class. Apply softmax to get probabilities,
+            or use with ``CrossEntropyLoss`` which applies softmax internally.
 
         Note:
-            The output logits are not normalized. Use torch.nn.functional.softmax
-            for probability distributions, or pass directly to CrossEntropyLoss
+            The output logits are not normalized. Use ``torch.nn.functional.softmax``
+            for probability distributions, or pass directly to ``CrossEntropyLoss``
             during training.
         """
         x = self.encoder(x)
@@ -217,7 +366,8 @@ class DeepFont(nn.Module):
         pretrained features.
 
         The weight mapping handles the structural differences between DeepFontAE
-        (no batch norm) and DeepFont (with batch norm) by manually mapping layer indices.
+        (with or without batch norm) and DeepFont (with or without batch norm) by
+        computing the correct index offsets based on whether batch norm is present.
 
         Args:
             encoder_weights_file: Path to the saved autoencoder model checkpoint (.pt or
@@ -229,13 +379,14 @@ class DeepFont(nn.Module):
             RuntimeError: If the weight shapes don't match or keys are missing.
 
         Note:
-            This method only loads the convolutional and bias weights, not the batch
-            normalization layers (which don't exist in the autoencoder). The loaded
-            layers are automatically frozen (requires_grad=False) to prevent their
-            modification during fine-tuning. Each frozen layer is logged for verification.
+            This method only loads the convolutional weights and biases, not
+            batch-normalization parameters (which may not exist in the autoencoder).
+            The loaded layers are automatically frozen (``requires_grad=False``)
+            to prevent their modification during fine-tuning.  Each frozen layer
+            is logged for verification.
 
         Example:
-            >>> model = DeepFont(num_out=2383)
+            >>> model = DeepFont(DeepFontConfig(num_classes=2383))
             >>> model.load_encoder_weights('pretrained_ae.pt')
             >>> # Now train with frozen encoder weights
         """
@@ -243,16 +394,30 @@ class DeepFont(nn.Module):
         state_dict = torch.load(encoder_weights_file, map_location=torch.device("cpu"))
         # Keep only the encoder part
         state_dict = {k.replace("encoder.", ""): v for k, v in state_dict.items() if "encoder" in k}
-        # Manually map the weights
-        layer_map = {
-            "0.weight": "0.weight",
-            "0.bias": "0.bias",
-            "3.weight": "4.weight",
-            "3.bias": "4.bias",
-        }
+
+        # Compute the layer index mapping between the source AE encoder and this
+        # classifier's encoder.  Each encoder stage has a variable number of
+        # sub-layers depending on whether batch norm is used:
+        #   without BN: Conv2d, MaxPool2d, ReLU  -> 3 sub-layers per stage
+        #   with BN:    Conv2d, BatchNorm2d, MaxPool2d, ReLU  -> 4 sub-layers per stage
+        #
+        # We need to detect the source layout from the checkpoint keys and map
+        # Conv2d weight/bias keys to the correct indices in *this* encoder.
+        src_conv_indices = sorted({int(k.split(".")[0]) for k in state_dict})
+        dst_stride = 4 if self.config.use_encoder_batch_norm else 3
+
+        layer_map: dict[str, str] = {}
+        for stage_i, src_idx in enumerate(src_conv_indices):
+            dst_idx = stage_i * dst_stride
+            for suffix in ("weight", "bias"):
+                src_key = f"{src_idx}.{suffix}"
+                if src_key in state_dict:
+                    layer_map[src_key] = f"{dst_idx}.{suffix}"
+
         new_state_dict = {}
-        for k, v in state_dict.items():
-            new_state_dict[layer_map[k]] = v
+        for src_key, dst_key in layer_map.items():
+            new_state_dict[dst_key] = state_dict[src_key]
+
         # Load the weights
         self.encoder.load_state_dict(new_state_dict, strict=False)
         # Freeze the loaded layers
