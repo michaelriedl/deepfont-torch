@@ -1,6 +1,22 @@
 # DeepFont convolutional autoencoder for unsupervised pretraining.
 # https://github.com/mriedl/deepfont-torch
+#
+# All values below are the paper defaults.  Override individual fields in
+# your experiment YAML or on the command line, e.g.:
+#   python train.py model.encoder_channels=[96,192] model.use_batch_norm=true
 
 _target_: deepfont.models.deepfont.DeepFontAE
 
-output_activation: null # null | "sigmoid" | "relu"
+# Input
+in_channels: 1
+
+# Encoder architecture
+encoder_channels: [64, 128]
+encoder_kernel_sizes: [11, 5]
+encoder_strides: [2, 1]
+encoder_paddings: [0, 2]
+pool_kernel_size: 2
+use_batch_norm: false
+
+# Output
+output_activation: null  # null | "sigmoid" | "relu"
