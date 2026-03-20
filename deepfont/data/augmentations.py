@@ -108,9 +108,9 @@ class RandomWidthScale(RandomScale):
         self,
         img: np.ndarray,
         scale: float,
-        interpolation: int,
         **params: Any,
     ) -> np.ndarray:
+        interpolation = params.get("interpolation", cv2.INTER_LINEAR)
         height, width = img.shape[:2]
         new_size = int(height), max(int(width * scale), int(height))
         return resize(img, new_size, interpolation)
@@ -169,7 +169,8 @@ class ResizeHeightSqueezeWidth(DualTransform):
         self.width_scale = width_scale
         self.interpolation = interpolation
 
-    def apply(self, img: np.ndarray, interpolation: int, **params: Any) -> np.ndarray:
+    def apply(self, img: np.ndarray, *args: Any, **params: Any) -> np.ndarray:
+        interpolation = params.get("interpolation", self.interpolation)
         height, width = img.shape[:2]
         height_scale = self.height / height
         # Don't allow the width to be squeezed below the height
