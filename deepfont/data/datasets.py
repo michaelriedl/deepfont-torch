@@ -12,10 +12,10 @@ from torch.utils.data import Dataset
 from .bcf import BCFStoreFile, read_label
 from .augmentations import eval_pipeline, augmentation_pipeline
 
-PngImagePlugin.MAX_TEXT_CHUNK = 1048576 * 10
+PngImagePlugin.MAX_TEXT_CHUNK = 1048576 * 10  # ty: ignore[invalid-assignment]
 
 # Load truncated images
-ImageFile.LOAD_TRUNCATED_IMAGES = True
+ImageFile.LOAD_TRUNCATED_IMAGES = True  # ty: ignore[invalid-assignment]
 
 
 class PretrainData(Dataset):
@@ -54,7 +54,7 @@ class PretrainData(Dataset):
     def __init__(
         self,
         bcf_store_file: str,
-        data_folder_name: str,
+        data_folder_name: str | None,
         aug_prob: float,
         image_normalization: str = "0to1",
     ):
@@ -167,6 +167,7 @@ class PretrainData(Dataset):
                 BytesIO(self.bcf_store.get(int(self.syn_image_index_list[index])))
             ).convert("L")
         else:
+            assert self.data_folder_name is not None
             # Get the real image
             image = Image.open(
                 os.path.join(

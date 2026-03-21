@@ -526,6 +526,6 @@ class TestAlbumentationsAPIContract:
         parent_sig = inspect.signature(RandomScale.apply)
         assert "params" in parent_sig.parameters
 
-        # Our override must explicitly name 'interpolation' to receive it.
+        # Our override must accept **params so that interpolation flows through.
         override_sig = inspect.signature(RandomWidthScale.apply)
-        assert "interpolation" in override_sig.parameters
+        assert "params" in override_sig.parameters

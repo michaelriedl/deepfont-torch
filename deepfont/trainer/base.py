@@ -66,7 +66,7 @@ class BaseTrainer(ABC):
             accelerator=config.accelerator,
             devices=config.devices,
             strategy=config.strategy,
-            precision=config.precision,
+            precision=config.precision,  # ty: ignore[invalid-argument-type]
             loggers=loggers or [],
             callbacks=callbacks or [],
         )
@@ -160,8 +160,7 @@ class BaseTrainer(ABC):
         # Fabric: wrap model + optimizer for device placement, distributed,
         # and mixed-precision, then wrap DataLoaders for distributed samplers.
         model, optimizer = self.fabric.setup(model, optimizer)
-        train_loader = self.fabric.setup_dataloaders(train_loader)
-        val_loader = self.fabric.setup_dataloaders(val_loader)
+        train_loader, val_loader = self.fabric.setup_dataloaders(train_loader, val_loader)
 
         # Expose training objects on self so callbacks can access them.
         self.model = model
@@ -229,7 +228,7 @@ class BaseTrainer(ABC):
             # Defer gradient sync during accumulation steps (speeds up DDP).
             is_accumulating = (batch_idx + 1) % self.config.grad_accum_steps != 0
 
-            with self.fabric.no_backward_sync(model, enabled=is_accumulating):
+            with self.fabric.no_backward_sync(model, enabled=is_accumulating):  # ty: ignore[invalid-argument-type]
                 outputs = self.training_step(model, batch, batch_idx)
                 self.fabric.backward(outputs["loss"])
 
