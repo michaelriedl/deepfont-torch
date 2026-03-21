@@ -20,10 +20,10 @@ NOISE_STD_RANGE = (0.05, 0.15)
 ROT_FLIP_PROB = 0.5
 
 
-def add_greyscale_gradient(
+def add_grayscale_gradient(
     image: np.ndarray, gradient_min: tuple = (20, 100), gradient_max: tuple = (140, 220)
 ) -> np.ndarray:
-    """Adds a random linear gradient overlay to a greyscale image.
+    """Adds a random linear gradient overlay to a grayscale image.
 
     This function generates a 2D linear gradient in a random direction and subtracts
     it from the input image to simulate lighting variations. The gradient direction is
@@ -36,7 +36,7 @@ def add_greyscale_gradient(
     valid pixel values.
 
     Args:
-        image: A 2D NumPy array representing a greyscale image with values in [0, 255].
+        image: A 2D NumPy array representing a grayscale image with values in [0, 255].
             The array dtype will be preserved in the output.
         gradient_min: A tuple of two floats (min_bound, max_bound) defining the range
             from which the minimum gradient intensity is randomly sampled. Default is
@@ -198,7 +198,7 @@ def augmentation_pipeline(image: np.ndarray, image_type: str, aug_prob: float) -
     and color transformations without synthetic artifacts.
 
     Args:
-        image: Input image as a NumPy array. Should be a greyscale image with values
+        image: Input image as a NumPy array. Should be a grayscale image with values
             in the range [0, 255].
         image_type: The type of image determining which pipeline to use. Must be
             either "synthetic" for rendered/generated images or "real" for
@@ -250,7 +250,7 @@ def _synthetic_image_pipeline(image: np.ndarray, aug_prob: float) -> np.ndarray:
     with blur and noise, to bridge the domain gap between synthetic and real images.
 
     Args:
-        image: Input synthetic image as a NumPy array. Should be a greyscale image
+        image: Input synthetic image as a NumPy array. Should be a grayscale image
             with values in the range [0, 255].
         aug_prob: The probability (0.0 to 1.0) of applying each probabilistic
             augmentation. A value of 0.0 applies only always_apply transforms,
@@ -261,13 +261,13 @@ def _synthetic_image_pipeline(image: np.ndarray, aug_prob: float) -> np.ndarray:
         model input.
 
     Note:
-        The greyscale gradient is applied first with probability aug_prob, before
+        The grayscale gradient is applied first with probability aug_prob, before
         the albumentations pipeline. All geometric parameters are defined as module-level
         constants (IMAGE_SIZE, SQUEEZE_RATIO, SCALE_LIMIT, etc.).
     """
-    # Add the greyscale gradient
+    # Add the grayscale gradient
     if np.random.rand() < aug_prob:
-        image = add_greyscale_gradient(image)
+        image = add_grayscale_gradient(image)
     # Create the augmentation pipeline
     augmentations = A.Compose(
         [
@@ -314,7 +314,7 @@ def _real_image_pipeline(image: np.ndarray, aug_prob: float) -> np.ndarray:
     could degrade image quality.
 
     Args:
-        image: Input real image as a NumPy array. Should be a greyscale image
+        image: Input real image as a NumPy array. Should be a grayscale image
             with values in the range [0, 255].
         aug_prob: The probability (0.0 to 1.0) of applying each probabilistic
             augmentation. A value of 0.0 applies only always_apply transforms,
@@ -325,7 +325,7 @@ def _real_image_pipeline(image: np.ndarray, aug_prob: float) -> np.ndarray:
         model input.
 
     Note:
-        Unlike the synthetic pipeline, no greyscale gradient or noise is added.
+        Unlike the synthetic pipeline, no grayscale gradient or noise is added.
         All geometric parameters are defined as module-level constants (IMAGE_SIZE,
         SQUEEZE_RATIO, SCALE_LIMIT, etc.).
     """
@@ -371,7 +371,7 @@ def eval_pipeline(image: np.ndarray, num_image_crops: int) -> np.ndarray:
     are applied to preserve the image's semantic content.
 
     Args:
-        image: Input image as a NumPy array. Should be a greyscale image with
+        image: Input image as a NumPy array. Should be a grayscale image with
             values in the range [0, 255].
         num_image_crops: The number of different augmented crops to generate from
             the input image. More crops provide better coverage but increase

@@ -7,11 +7,10 @@ from dataclasses import dataclass
 
 @dataclass
 class LearningRateMonitorCallbackConfig:
-    """Hydra structured config for :class:`LearningRateMonitorCallback`.
+    """Hydra structured config for LearningRateMonitorCallback.
 
     Register with Hydra's ConfigStore via
-    :func:`~deepfont.callbacks.config_store.register_callback_configs` to use
-    as a config group default.
+    register_callback_configs() to use as a config group default.
     """
 
     _target_: str = "deepfont.callbacks.LearningRateMonitorCallback"
@@ -21,21 +20,19 @@ class LearningRateMonitorCallbackConfig:
 class LearningRateMonitorCallback:
     """Log the current learning rate(s) to the Fabric logger each epoch.
 
-    Reads LR values from the optimizer's ``param_groups`` at the start of
-    every training epoch and forwards them to ``trainer.fabric.log_dict()``.
-    If the optimizer has a single parameter group the key is ``"lr"``; for
-    multiple groups the keys are ``"lr_group_0"``, ``"lr_group_1"``, etc.
+    Reads LR values from the optimizer's param_groups at the start of
+    every training epoch and forwards them to trainer.fabric.log_dict().
+    If the optimizer has a single parameter group the key is "lr"; for
+    multiple groups the keys are "lr_group_0", "lr_group_1", etc.
 
     Args:
-        log_momentum: When ``True``, also log the momentum (``betas[0]`` for
-            Adam-family optimizers, ``momentum`` for SGD) under keys
-            ``"momentum"`` / ``"momentum_group_{i}"``.
+        log_momentum: When True, also log the momentum (betas[0] for
+            Adam-family optimizers, momentum for SGD) under keys
+            "momentum" / "momentum_group_{i}".
 
-    Example::
-
-        from deepfont.callbacks import LearningRateMonitorCallback
-
-        cb = LearningRateMonitorCallback(log_momentum=True)
+    Example:
+        >>> from deepfont.callbacks import LearningRateMonitorCallback
+        >>> cb = LearningRateMonitorCallback(log_momentum=True)
     """
 
     def __init__(self, log_momentum: bool = False) -> None:

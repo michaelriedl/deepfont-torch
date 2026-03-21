@@ -7,11 +7,10 @@ from dataclasses import dataclass
 
 @dataclass
 class EarlyStoppingCallbackConfig:
-    """Hydra structured config for :class:`EarlyStoppingCallback`.
+    """Hydra structured config for EarlyStoppingCallback.
 
     Register with Hydra's ConfigStore via
-    :func:`~deepfont.callbacks.config_store.register_callback_configs` to use
-    as a config group default.
+    register_callback_configs() to use as a config group default.
     """
 
     _target_: str = "deepfont.callbacks.EarlyStoppingCallback"
@@ -26,33 +25,31 @@ class EarlyStoppingCallback:
     """Stop training when a monitored metric stops improving.
 
     Checks the monitored metric at the end of every validation epoch.  If the
-    metric does not improve by at least ``min_delta`` for ``patience``
-    consecutive validation epochs, ``trainer.should_stop`` is set to ``True``,
+    metric does not improve by at least min_delta for patience
+    consecutive validation epochs, trainer.should_stop is set to True,
     causing the training loop to exit cleanly at the end of that epoch.
 
     Args:
-        monitor: Key to watch in the ``val_metrics`` dict passed to
-            ``on_validation_epoch_end``.  Typically ``"val_loss"`` or
-            ``"val_acc"``.
+        monitor: Key to watch in the val_metrics dict passed to
+            on_validation_epoch_end.  Typically "val_loss" or
+            "val_acc".
         patience: Number of validation epochs with no improvement before
             training is stopped.
         min_delta: Minimum change in the monitored metric to qualify as
             improvement.  Changes smaller than this threshold are ignored.
-        mode: ``"min"`` (lower is better, e.g. loss) or ``"max"`` (higher is
+        mode: "min" (lower is better, e.g. loss) or "max" (higher is
             better, e.g. accuracy).
-        verbose: When ``True``, prints a message via ``trainer.fabric.print``
+        verbose: When True, prints a message via trainer.fabric.print
             on each patience increment and when training is stopped.
 
-    Example::
-
-        from deepfont.callbacks import EarlyStoppingCallback
-        from deepfont.trainer import PretrainTrainer, PretrainConfig
-
-        trainer = PretrainTrainer(
-            config=PretrainConfig(...),
-            callbacks=[EarlyStoppingCallback(monitor="val_loss", patience=10)],
-        )
-        trainer.fit()
+    Example:
+        >>> from deepfont.callbacks import EarlyStoppingCallback
+        >>> from deepfont.trainer import PretrainTrainer, PretrainConfig
+        >>> trainer = PretrainTrainer(
+        ...     config=PretrainConfig(...),
+        ...     callbacks=[EarlyStoppingCallback(monitor="val_loss", patience=10)],
+        ... )
+        >>> trainer.fit()
     """
 
     def __init__(

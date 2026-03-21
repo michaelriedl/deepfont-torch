@@ -17,30 +17,28 @@ from .config import PretrainConfig
 
 
 class PretrainTrainer(BaseTrainer):
-    """Trainer for the :class:`~deepfont.models.deepfont.DeepFontAE` pretraining stage.
+    """Trainer for the DeepFontAE pretraining stage.
 
     Trains the autoencoder to reconstruct font images using either MSE or L1
-    reconstruction loss.  After training, call :meth:`save_encoder_weights`
+    reconstruction loss.  After training, call save_encoder_weights()
     to export the encoder in a format compatible with
-    :meth:`~deepfont.models.deepfont.DeepFont.load_encoder_weights`.
+    DeepFont.load_encoder_weights().
 
-    Example::
-
-        from deepfont.trainer import PretrainTrainer, PretrainConfig
-
-        config = PretrainConfig(
-            bcf_store_file="data/train.bcf",
-            data_folder_name="data/real_images",
-            learning_rate=1e-3,
-            max_epochs=50,
-            batch_size=64,
-        )
-        trainer = PretrainTrainer(config)
-        trainer.fit()
-        trainer.save_encoder_weights(
-            ckpt_path="checkpoints/epoch-0050.ckpt",
-            output_path="checkpoints/encoder_weights.pt",
-        )
+    Example:
+        >>> from deepfont.trainer import PretrainTrainer, PretrainConfig
+        >>> config = PretrainConfig(
+        ...     bcf_store_file="data/train.bcf",
+        ...     data_folder_name="data/real_images",
+        ...     learning_rate=1e-3,
+        ...     max_epochs=50,
+        ...     batch_size=64,
+        ... )
+        >>> trainer = PretrainTrainer(config)
+        >>> trainer.fit()
+        >>> trainer.save_encoder_weights(
+        ...     ckpt_path="checkpoints/epoch-0050.ckpt",
+        ...     output_path="checkpoints/encoder_weights.pt",
+        ... )
     """
 
     def __init__(
@@ -56,14 +54,14 @@ class PretrainTrainer(BaseTrainer):
     # BaseTrainer abstract interface
 
     def create_model(self) -> nn.Module:
-        """Return a :class:`~deepfont.models.deepfont.DeepFontAE` instance."""
+        """Return a DeepFontAE instance."""
         return DeepFontAE(output_activation=self.config.output_activation)
 
     def create_dataloaders(self) -> tuple[DataLoader, DataLoader]:
-        """Build :class:`~deepfont.data.datasets.PretrainData` and split it.
+        """Build PretrainData and split it.
 
         Returns:
-            ``(train_loader, val_loader)`` ready for :meth:`fit`.
+            (train_loader, val_loader) ready for fit().
         """
         dataset = PretrainData(
             bcf_store_file=self.config.bcf_store_file,
@@ -103,7 +101,7 @@ class PretrainTrainer(BaseTrainer):
         self,
         model: nn.Module,
     ) -> tuple[Optimizer, LRScheduler | None]:
-        """Return an Adam optimiser and an optional LR scheduler."""
+        """Return an Adam optimizer and an optional LR scheduler."""
         optimizer = torch.optim.Adam(
             model.parameters(),
             lr=self.config.learning_rate,
@@ -125,12 +123,12 @@ class PretrainTrainer(BaseTrainer):
         """Forward + reconstruction loss for a batch of images.
 
         Args:
-            model: Fabric-wrapped :class:`~deepfont.models.deepfont.DeepFontAE`.
-            batch: Image tensor of shape ``(B, 1, H, W)``.
+            model: Fabric-wrapped DeepFontAE.
+            batch: Image tensor of shape (B, 1, H, W).
             batch_idx: Unused; present for interface compatibility.
 
         Returns:
-            ``{"loss": scalar_tensor}``
+            {"loss": scalar_tensor}
         """
         reconstructed = model(batch)
         return {"loss": self._reconstruction_loss(reconstructed, batch)}
@@ -145,11 +143,11 @@ class PretrainTrainer(BaseTrainer):
 
         Args:
             model: Fabric-wrapped model in eval mode.
-            batch: Image tensor of shape ``(B, 1, H, W)``.
+            batch: Image tensor of shape (B, 1, H, W).
             batch_idx: Unused; present for interface compatibility.
 
         Returns:
-            ``{"loss": scalar_tensor}``
+            {"loss": scalar_tensor}
         """
         reconstructed = model(batch)
         return {"loss": self._reconstruction_loss(reconstructed, batch)}
@@ -159,14 +157,14 @@ class PretrainTrainer(BaseTrainer):
     def save_encoder_weights(self, ckpt_path: str, output_path: str) -> None:
         """Extract encoder weights from a checkpoint and save them in raw format.
 
-        The output file contains the full ``DeepFontAE`` state dict (not the
+        The output file contains the full DeepFontAE state dict (not the
         Fabric checkpoint envelope), which is the format expected by
-        :meth:`~deepfont.models.deepfont.DeepFont.load_encoder_weights`.
+        DeepFont.load_encoder_weights().
 
         Args:
-            ckpt_path: Path to a Fabric checkpoint saved by :meth:`fit`.
+            ckpt_path: Path to a Fabric checkpoint saved by fit().
             output_path: Destination path for the weights file (e.g.
-                ``"checkpoints/encoder_weights.pt"``).
+                "checkpoints/encoder_weights.pt").
         """
         checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         model_state = checkpoint["model"]  # plain state dict saved by fabric.save

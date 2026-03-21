@@ -1,6 +1,6 @@
 """DeepFont model architectures and configuration classes.
 
-Public API::
+Public API:
 
     from deepfont.models import DeepFontAE, DeepFont
     from deepfont.models import DeepFontAEConfig, DeepFontConfig

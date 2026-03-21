@@ -9,11 +9,10 @@ from dataclasses import dataclass
 
 @dataclass
 class ModelCheckpointCallbackConfig:
-    """Hydra structured config for :class:`ModelCheckpointCallback`.
+    """Hydra structured config for ModelCheckpointCallback.
 
     Register with Hydra's ConfigStore via
-    :func:`~deepfont.callbacks.config_store.register_callback_configs` to use
-    as a config group default.
+    register_callback_configs() to use as a config group default.
     """
 
     _target_: str = "deepfont.callbacks.ModelCheckpointCallback"
@@ -30,31 +29,28 @@ class ModelCheckpointCallback:
     At the end of every validation epoch, the callback compares the monitored
     metric against the current top-k scores.  If the new score enters the
     top-k, a checkpoint is saved and the worst checkpoint (if the list exceeds
-    ``save_top_k``) is deleted from disk.
+    save_top_k) is deleted from disk.
 
     Checkpoints are saved alongside the epoch-based checkpoints produced by
-    :meth:`~deepfont.trainer.base.BaseTrainer._save_checkpoint`.  The filename
-    template is::
+    BaseTrainer._save_checkpoint().  The filename template is:
 
         {filename}-epoch={epoch:04d}-{monitor}={value:.4f}.ckpt
 
-    Saved inside ``trainer.config.checkpoint_dir``.
+    Saved inside trainer.config.checkpoint_dir.
 
     Args:
-        monitor: Metric key to watch in ``val_metrics``.
-        mode: ``"min"`` (lower is better) or ``"max"`` (higher is better).
+        monitor: Metric key to watch in val_metrics.
+        mode: "min" (lower is better) or "max" (higher is better).
         save_top_k: Maximum number of best checkpoints to keep on disk.
             When a new best is found and this limit is already reached, the
             worst checkpoint in the tracked set is removed.
         filename: Prefix for the checkpoint filename.
-        verbose: Print a message via ``trainer.fabric.print`` when a new best
+        verbose: Print a message via trainer.fabric.print when a new best
             checkpoint is saved.
 
-    Example::
-
-        from deepfont.callbacks import ModelCheckpointCallback
-
-        cb = ModelCheckpointCallback(monitor="val_acc", mode="max", save_top_k=3)
+    Example:
+        >>> from deepfont.callbacks import ModelCheckpointCallback
+        >>> cb = ModelCheckpointCallback(monitor="val_acc", mode="max", save_top_k=3)
     """
 
     def __init__(
@@ -148,7 +144,7 @@ class ModelCheckpointCallback:
         self._top_k.append((current, path))
         self._top_k.sort(key=lambda x: x[0])  # ascending
         if self.mode == "max":
-            # For "max" mode the *lowest* score at index 0 is the worst.
+            # For "max" mode the lowest score at index 0 is the worst.
             pass  # sort ascending is already correct — worst at [0]
 
         # If we now exceed the top-k limit, evict the worst entry.
