@@ -10,11 +10,10 @@ import torch
 
 @dataclass
 class ReconstructionVisualizerCallbackConfig:
-    """Hydra structured config for :class:`ReconstructionVisualizerCallback`.
+    """Hydra structured config for ReconstructionVisualizerCallback.
 
     Register with Hydra's ConfigStore via
-    :func:`~deepfont.callbacks.config_store.register_callback_configs` to use
-    as a config group default.
+    register_callback_configs() to use as a config group default.
     """
 
     _target_: str = "deepfont.callbacks.ReconstructionVisualizerCallback"
@@ -27,17 +26,15 @@ class ReconstructionVisualizerCallbackConfig:
 class ReconstructionVisualizerCallback:
     """Save input / reconstruction image grids to disk during pretraining.
 
-    At the end of qualifying validation epochs (every ``save_every_n_epochs``),
+    At the end of qualifying validation epochs (every save_every_n_epochs),
     this callback runs the stored sample inputs through the model and saves a
     side-by-side grid of originals and reconstructions as a PNG file.
 
-    .. warning::
-        This callback is designed for use with
-        :class:`~deepfont.trainer.pretrain.PretrainTrainer` only.  It expects
-        ``batch`` in ``on_validation_batch_start`` to be a plain image tensor
-        of shape ``(B, 1, H, W)``.  Attaching it to
-        :class:`~deepfont.trainer.finetune.FinetuneTrainer` (where batches are
-        ``(images, labels)`` tuples) will raise a ``TypeError``.
+    Warning:
+        This callback is designed for use with PretrainTrainer only.  It
+        expects batch in on_validation_batch_start to be a plain image tensor
+        of shape (B, 1, H, W).  Attaching it to FinetuneTrainer (where batches
+        are (images, labels) tuples) will raise a TypeError.
 
     Args:
         save_every_n_epochs: Save a grid every this many epochs.  Epoch 0 is
@@ -46,26 +43,24 @@ class ReconstructionVisualizerCallback:
             start of the first validation batch).
         output_dir: Directory where PNG files are written.  Created
             automatically if it does not exist.
-        value_range: Passed directly to ``torchvision.utils.make_grid`` as
-            the ``value_range`` argument (a ``(min, max)`` tuple).  Set to
-            ``(-1, 1)`` when using ``image_normalization="-1to1"`` in the
-            trainer config.  ``None`` triggers auto-normalisation (min/max
-            over the displayed batch), which is safe for both normalisations.
+        value_range: Passed directly to torchvision.utils.make_grid as
+            the value_range argument (a (min, max) tuple).  Set to
+            (-1, 1) when using image_normalization="-1to1" in the
+            trainer config.  None triggers auto-normalization (min/max
+            over the displayed batch), which is safe for both normalizations.
 
     Requires:
-        ``torchvision`` must be installed.  It is an indirect dependency of
+        torchvision must be installed.  It is an indirect dependency of
         this project; add it as an explicit dependency if needed.
 
-    Example::
-
-        from deepfont.callbacks import ReconstructionVisualizerCallback
-
-        cb = ReconstructionVisualizerCallback(
-            save_every_n_epochs=10,
-            num_samples=16,
-            output_dir="runs/pretrain/reconstructions",
-            value_range=(0.0, 1.0),
-        )
+    Example:
+        >>> from deepfont.callbacks import ReconstructionVisualizerCallback
+        >>> cb = ReconstructionVisualizerCallback(
+        ...     save_every_n_epochs=10,
+        ...     num_samples=16,
+        ...     output_dir="runs/pretrain/reconstructions",
+        ...     value_range=(0.0, 1.0),
+        ... )
     """
 
     def __init__(
@@ -86,7 +81,7 @@ class ReconstructionVisualizerCallback:
         return trainer.current_epoch % self.save_every_n_epochs == 0
 
     def on_validation_batch_start(self, batch, batch_idx, trainer) -> None:
-        """Capture the first ``num_samples`` images from the first val batch."""
+        """Capture the first num_samples images from the first val batch."""
         if batch_idx != 0 or not self._is_save_epoch(trainer):
             return
         # batch is a plain image tensor (B, 1, H, W) for PretrainTrainer.
@@ -117,7 +112,7 @@ class ReconstructionVisualizerCallback:
         with torch.no_grad():
             reconstructed = trainer.model(inputs.to(device)).detach().cpu()
 
-        # Clamp to avoid artefacts from out-of-range activations.
+        # Clamp to avoid artifacts from out-of-range activations.
         if self.value_range is not None:
             lo, hi = self.value_range
             inputs = inputs.clamp(lo, hi)

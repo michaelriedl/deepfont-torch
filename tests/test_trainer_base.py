@@ -31,9 +31,7 @@ from torch.nn.functional import mse_loss
 from deepfont.trainer.base import BaseTrainer
 from deepfont.trainer.config import TrainerConfig
 
-# ---------------------------------------------------------------------------
 # Concrete trainer used by all test classes
-# ---------------------------------------------------------------------------
 
 
 class MinimalTrainer(BaseTrainer):
@@ -91,9 +89,7 @@ class MinimalTrainer(BaseTrainer):
         return metrics
 
 
-# ---------------------------------------------------------------------------
 # Config factory
-# ---------------------------------------------------------------------------
 
 
 def _base_config(**overrides) -> TrainerConfig:
@@ -114,9 +110,7 @@ def _base_config(**overrides) -> TrainerConfig:
     return TrainerConfig(**defaults)
 
 
-# ---------------------------------------------------------------------------
 # Test classes
-# ---------------------------------------------------------------------------
 
 
 class TestShouldValidate:

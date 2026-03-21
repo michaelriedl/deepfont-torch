@@ -21,9 +21,7 @@ from deepfont.trainer.config import PretrainConfig
 from deepfont.models.deepfont import DeepFontAE
 from deepfont.trainer.pretrain import PretrainTrainer
 
-# ---------------------------------------------------------------------------
 # Helper factory
-# ---------------------------------------------------------------------------
 
 
 def _make_trainer(**overrides) -> PretrainTrainer:
@@ -37,9 +35,7 @@ def _make_trainer(**overrides) -> PretrainTrainer:
     return PretrainTrainer(config)
 
 
-# ---------------------------------------------------------------------------
 # Test classes
-# ---------------------------------------------------------------------------
 
 
 class TestReconstructionLoss:

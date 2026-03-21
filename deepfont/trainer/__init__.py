@@ -3,13 +3,12 @@
 Provides a Lightning Fabric-based training framework with a shared base class
 and two concrete implementations:
 
-- :class:`PretrainTrainer` — trains :class:`~deepfont.models.deepfont.DeepFontAE`
-  for unsupervised reconstruction pretraining.
-- :class:`FinetuneTrainer` — trains :class:`~deepfont.models.deepfont.DeepFont`
-  for supervised font classification, with optional transfer from a pretrained
-  encoder and TTA evaluation.
+- PretrainTrainer -- trains DeepFontAE for unsupervised reconstruction
+  pretraining.
+- FinetuneTrainer -- trains DeepFont for supervised font classification,
+  with optional transfer from a pretrained encoder and TTA evaluation.
 
-Typical workflow::
+Typical workflow:
 
     from deepfont.trainer import PretrainTrainer, PretrainConfig
     from deepfont.trainer import FinetuneTrainer, FinetuneConfig

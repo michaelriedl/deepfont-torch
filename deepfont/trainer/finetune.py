@@ -16,34 +16,32 @@ from .config import FinetuneConfig
 
 
 class FinetuneTrainer(BaseTrainer):
-    """Trainer for the :class:`~deepfont.models.deepfont.DeepFont` classification stage.
+    """Trainer for the DeepFont classification stage.
 
     Trains a font classifier with cross-entropy loss and optional transfer of
-    pretrained encoder weights from a :class:`PretrainTrainer` run.
+    pretrained encoder weights from a PretrainTrainer run.
 
-    Beyond the standard :meth:`fit` loop, :meth:`evaluate` runs a separate
-    test-time augmentation (TTA) pass over an :class:`~deepfont.data.datasets.EvalData`
+    Beyond the standard fit() loop, evaluate() runs a separate
+    test-time augmentation (TTA) pass over an EvalData
     dataset, averaging logits across multiple crops of each image to produce a
     more robust top-1 accuracy estimate.
 
-    Example::
-
-        from deepfont.trainer import FinetuneTrainer, FinetuneConfig
-
-        config = FinetuneConfig(
-            bcf_store_file="data/finetune.bcf",
-            label_file="data/finetune.labels",
-            eval_bcf_store_file="data/test.bcf",
-            eval_label_file="data/test.labels",
-            encoder_weights_path="checkpoints/encoder_weights.pt",
-            num_classes=2383,
-            learning_rate=1e-4,
-            max_epochs=30,
-        )
-        trainer = FinetuneTrainer(config)
-        trainer.fit()
-        results = trainer.evaluate(ckpt_path="checkpoints/epoch-0030.ckpt")
-        print(results["accuracy"])
+    Example:
+        >>> from deepfont.trainer import FinetuneTrainer, FinetuneConfig
+        >>> config = FinetuneConfig(
+        ...     bcf_store_file="data/finetune.bcf",
+        ...     label_file="data/finetune.labels",
+        ...     eval_bcf_store_file="data/test.bcf",
+        ...     eval_label_file="data/test.labels",
+        ...     encoder_weights_path="checkpoints/encoder_weights.pt",
+        ...     num_classes=2383,
+        ...     learning_rate=1e-4,
+        ...     max_epochs=30,
+        ... )
+        >>> trainer = FinetuneTrainer(config)
+        >>> trainer.fit()
+        >>> results = trainer.evaluate(ckpt_path="checkpoints/epoch-0030.ckpt")
+        >>> print(results["accuracy"])
     """
 
     def __init__(
@@ -58,9 +56,9 @@ class FinetuneTrainer(BaseTrainer):
     # BaseTrainer abstract interface
 
     def create_model(self) -> nn.Module:
-        """Return a :class:`~deepfont.models.deepfont.DeepFont` instance.
+        """Return a DeepFont instance.
 
-        If ``config.encoder_weights_path`` is set, the pretrained AE encoder
+        If config.encoder_weights_path is set, the pretrained AE encoder
         weights are loaded and frozen before training begins.
         """
         model = DeepFont(num_classes=self.config.num_classes)
@@ -69,13 +67,13 @@ class FinetuneTrainer(BaseTrainer):
         return model
 
     def create_dataloaders(self) -> tuple[DataLoader, DataLoader]:
-        """Build :class:`~deepfont.data.datasets.FinetuneData` and split it.
+        """Build FinetuneData and split it.
 
-        The validation split uses ``aug_prob=0.0`` (no augmentation) to give a
+        The validation split uses aug_prob=0.0 (no augmentation) to give a
         consistent, repeatable loss estimate across epochs.
 
         Returns:
-            ``(train_loader, val_loader)`` ready for :meth:`fit`.
+            (train_loader, val_loader) ready for fit().
         """
         dataset = FinetuneData(
             bcf_store_file=self.config.bcf_store_file,
@@ -115,8 +113,8 @@ class FinetuneTrainer(BaseTrainer):
     ) -> tuple[Optimizer, LRScheduler | None]:
         """Return an Adam optimizer over trainable parameters only.
 
-        Parameters with ``requires_grad=False`` (i.e. frozen encoder layers
-        when ``encoder_weights_path`` is set) are excluded automatically.
+        Parameters with requires_grad=False (i.e. frozen encoder layers
+        when encoder_weights_path is set) are excluded automatically.
         """
         trainable = [p for p in model.parameters() if p.requires_grad]
         optimizer = torch.optim.Adam(
@@ -140,13 +138,13 @@ class FinetuneTrainer(BaseTrainer):
         """Classification forward pass for one training batch.
 
         Args:
-            model: Fabric-wrapped :class:`~deepfont.models.deepfont.DeepFont`.
-            batch: ``(images, labels)`` tuple with shapes
-                ``(B, 1, H, W)`` and ``(B,)``.
+            model: Fabric-wrapped DeepFont.
+            batch: (images, labels) tuple with shapes
+                (B, 1, H, W) and (B,).
             batch_idx: Unused; present for interface compatibility.
 
         Returns:
-            ``{"loss": cross_entropy, "acc": top1_accuracy}``
+            {"loss": cross_entropy, "acc": top1_accuracy}
         """
         images, labels = batch
         logits = model(images)
@@ -164,11 +162,11 @@ class FinetuneTrainer(BaseTrainer):
 
         Args:
             model: Fabric-wrapped model in eval mode.
-            batch: ``(images, labels)`` tuple.
+            batch: (images, labels) tuple.
             batch_idx: Unused; present for interface compatibility.
 
         Returns:
-            ``{"loss": cross_entropy, "acc": top1_accuracy}``
+            {"loss": cross_entropy, "acc": top1_accuracy}
         """
         images, labels = batch
         logits = model(images)
@@ -181,30 +179,30 @@ class FinetuneTrainer(BaseTrainer):
     def evaluate(self, ckpt_path: str | None = None) -> dict[str, float]:
         """Run test-time augmentation (TTA) evaluation over the eval dataset.
 
-        For each image, :class:`~deepfont.data.datasets.EvalData` generates
-        ``num_image_crops`` augmented crops.  The model produces a logit
-        vector per crop; these are averaged before taking the argmax.  This
-        ensemble typically yields higher accuracy than single-crop evaluation.
+        For each image, EvalData generates num_image_crops augmented crops.
+        The model produces a logit vector per crop; these are averaged before
+        taking the argmax.  This ensemble typically yields higher accuracy than
+        single-crop evaluation.
 
         This method is self-contained: it builds a fresh model, optionally
         loads from a checkpoint, and runs evaluation without affecting any
-        state set by a prior :meth:`fit` call.
+        state set by a prior fit() call.
 
         Args:
             ckpt_path: Optional path to a Fabric checkpoint to load weights
-                from.  If ``None`` the model is evaluated with its initialized
-                weights (only useful if :meth:`fit` was called beforehand and
+                from.  If None the model is evaluated with its initialized
+                weights (only useful if fit() was called beforehand and
                 you are using this method to evaluate mid-run state).
 
         Returns:
             A dict with keys:
 
-            - ``"accuracy"`` — top-1 accuracy as a float in ``[0, 1]``
-            - ``"correct"`` — number of correctly classified images
-            - ``"total"`` — total number of images evaluated
+            - "accuracy" -- top-1 accuracy as a float in [0, 1]
+            - "correct" -- number of correctly classified images
+            - "total" -- total number of images evaluated
 
         Raises:
-            ValueError: If ``eval_bcf_store_file`` or ``eval_label_file`` is
+            ValueError: If eval_bcf_store_file or eval_label_file is
                 not set in the config.
         """
         if not self.config.eval_bcf_store_file or not self.config.eval_label_file:
