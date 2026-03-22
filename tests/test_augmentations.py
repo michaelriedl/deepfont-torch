@@ -8,7 +8,7 @@ a silent regression.
 
 Test classes:
     TestConstants                       -- module-level hyper-parameter values
-    TestAddGreyscaleGradient            -- standalone NumPy gradient function
+    TestAddGrayscaleGradient            -- standalone NumPy gradient function
     TestRandomWidthScale                -- custom albumentations width-only scaling transform
     TestResizeHeightSqueezeWidth        -- custom DualTransform for height + width resize
     TestAugmentationPipelineDispatch    -- dispatcher routing and error handling
@@ -45,7 +45,7 @@ from deepfont.data.augmentations import (
     ResizeHeightSqueezeWidth,
     eval_pipeline,
     augmentation_pipeline,
-    add_greyscale_gradient,
+    add_grayscale_gradient,
 )
 
 # Shared fixtures
@@ -53,7 +53,7 @@ from deepfont.data.augmentations import (
 
 @pytest.fixture
 def wide_image() -> np.ndarray:
-    """A wide greyscale text patch (landscape orientation)."""
+    """A wide grayscale text patch (landscape orientation)."""
     rng = np.random.default_rng(42)
     return rng.integers(0, 256, size=(80, 400), dtype=np.uint8)
 
@@ -67,7 +67,7 @@ def tall_image() -> np.ndarray:
 
 @pytest.fixture
 def square_image() -> np.ndarray:
-    """A square greyscale image."""
+    """A square grayscale image."""
     rng = np.random.default_rng(42)
     return rng.integers(0, 256, size=(200, 200), dtype=np.uint8)
 
@@ -114,38 +114,38 @@ class TestConstants:
         assert ROT_FLIP_PROB == pytest.approx(0.5)
 
 
-# add_greyscale_gradient
+# add_grayscale_gradient
 
 
-class TestAddGreyscaleGradient:
+class TestAddGrayscaleGradient:
     """Tests for the standalone gradient overlay function."""
 
     def test_output_shape_preserved(self, wide_image):
-        result = add_greyscale_gradient(wide_image)
+        result = add_grayscale_gradient(wide_image)
         assert result.shape == wide_image.shape
 
     def test_output_dtype_preserved_uint8(self, wide_image):
-        result = add_greyscale_gradient(wide_image)
+        result = add_grayscale_gradient(wide_image)
         assert result.dtype == np.uint8
 
     def test_output_dtype_preserved_float32(self):
         img = (np.random.default_rng(0).random((100, 200)) * 255).astype(np.float32)
-        result = add_greyscale_gradient(img)
+        result = add_grayscale_gradient(img)
         assert result.dtype == np.float32
 
     def test_output_values_clipped_to_valid_range(self, wide_image):
-        result = add_greyscale_gradient(wide_image)
+        result = add_grayscale_gradient(wide_image)
         assert int(result.min()) >= 0
         assert int(result.max()) <= 255
 
     def test_gradient_changes_pixel_values(self):
         # A uniformly bright image is guaranteed to change after gradient subtraction.
         bright = np.full((100, 200), 200, dtype=np.uint8)
-        result = add_greyscale_gradient(bright)
+        result = add_grayscale_gradient(bright)
         assert not np.array_equal(result, bright)
 
     def test_custom_gradient_bounds_produces_valid_output(self, wide_image):
-        result = add_greyscale_gradient(wide_image, gradient_min=(0, 10), gradient_max=(10, 20))
+        result = add_grayscale_gradient(wide_image, gradient_min=(0, 10), gradient_max=(10, 20))
         assert result.shape == wide_image.shape
         assert result.dtype == wide_image.dtype
         assert int(result.min()) >= 0
@@ -154,7 +154,7 @@ class TestAddGreyscaleGradient:
     def test_square_image(self):
         rng = np.random.default_rng(7)
         img = rng.integers(0, 256, size=(150, 150), dtype=np.uint8)
-        result = add_greyscale_gradient(img)
+        result = add_grayscale_gradient(img)
         assert result.shape == img.shape
 
 

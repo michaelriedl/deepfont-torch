@@ -20,9 +20,7 @@ from deepfont.trainer.config import FinetuneConfig
 from deepfont.models.deepfont import DeepFont, DeepFontAE
 from deepfont.trainer.finetune import FinetuneTrainer
 
-# ---------------------------------------------------------------------------
 # Helper factory
-# ---------------------------------------------------------------------------
 
 _NUM_CLASSES = 10  # small class count keeps forward passes fast
 
@@ -48,9 +46,7 @@ def _save_fake_encoder_weights(path: str) -> None:
     torch.save(DeepFontAE().state_dict(), path)
 
 
-# ---------------------------------------------------------------------------
 # Test classes
-# ---------------------------------------------------------------------------
 
 
 class TestTrainingStep:
