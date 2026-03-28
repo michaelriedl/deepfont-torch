@@ -2,8 +2,8 @@
 # _target_ will point to the LightningDataModule once it is implemented.
 
 # --- Train / val data ---
-bcf_store_file: ??? # path to the BCF store file containing font images
-label_file: ??? # path to the label CSV/JSON file mapping image IDs to font classes
+bcf_store_file: "${paths.data_dir}deepfont_data/BCF format/VFR_syn_train/train.bcf" # path to the BCF store file containing font images
+label_file: "${paths.data_dir}deepfont_data/BCF format/VFR_syn_train/train.label" # path to the label CSV/JSON file mapping image IDs to font classes
 aug_prob: 0.5
 image_normalization: "0to1" # "0to1" or "-1to1"
 num_images_to_cache: 0 # pre-load this many images into RAM; 0 = disabled

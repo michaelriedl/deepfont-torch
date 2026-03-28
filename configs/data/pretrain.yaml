@@ -2,8 +2,8 @@
 # _target_ will point to the LightningDataModule once it is implemented.
 
 # --- Data ---
-bcf_store_file: ??? # path to the BCF store file containing synthetic font images
-data_folder_name: null # directory of real images; null = synthetic only
+bcf_store_file: "${paths.data_dir}deepfont_data/BCF format/VFR_syn_train/train.bcf" # path to the BCF store file containing synthetic font images
+data_folder_name: "${paths.data_dir}deepfont_data/Raw Image/VFR_real_u" # directory of real images; null = synthetic only
 aug_prob: 0.5
 image_normalization: "0to1" # "0to1" or "-1to1"
 upsample_real_images: true # match real count to synthetic count via resampling
