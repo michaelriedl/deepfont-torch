@@ -68,7 +68,9 @@ class TestModelInstantiation:
         """Test that DeepFontAE can be instantiated with sigmoid activation."""
         from deepfont.models.deepfont import DeepFontAE
 
-        model = DeepFontAE(output_activation="sigmoid")
+        from deepfont.models.config import DeepFontAEConfig
+
+        model = DeepFontAE(DeepFontAEConfig(output_activation="sigmoid"))
         assert model is not None
         assert isinstance(model, torch.nn.Module)
 
@@ -76,7 +78,9 @@ class TestModelInstantiation:
         """Test that DeepFontAE can be instantiated with ReLU activation."""
         from deepfont.models.deepfont import DeepFontAE
 
-        model = DeepFontAE(output_activation="relu")
+        from deepfont.models.config import DeepFontAEConfig
+
+        model = DeepFontAE(DeepFontAEConfig(output_activation="relu"))
         assert model is not None
         assert isinstance(model, torch.nn.Module)
 

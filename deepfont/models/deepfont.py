@@ -143,7 +143,7 @@ class DeepFontAE(nn.Module):
             the image from the latent representation.
     """
 
-    def __init__(self, config: DeepFontAEConfig | None = None, **kwargs):
+    def __init__(self, config: DeepFontAEConfig | None = None):
         """Initializes the DeepFontAE autoencoder architecture.
 
         Constructs the encoder-decoder network from the provided configuration.
@@ -153,11 +153,7 @@ class DeepFontAE(nn.Module):
 
         Args:
             config: A DeepFontAEConfig controlling every architectural
-                parameter.  When None, a default config is created from any
-                additional **kwargs (for backward compatibility).
-            **kwargs: Forwarded to DeepFontAEConfig when config is
-                None.  Accepted keys include output_activation,
-                in_channels, encoder_channels, etc.
+                parameter.  When None, a default config is used.
 
         Raises:
             ValueError: If config validation fails (e.g. mismatched tuple
@@ -171,7 +167,7 @@ class DeepFontAE(nn.Module):
         """
         super().__init__()
         if config is None:
-            config = DeepFontAEConfig(**kwargs)
+            config = DeepFontAEConfig()
         self.config = config
 
         self.encoder = _build_encoder(
@@ -247,7 +243,7 @@ class DeepFont(nn.Module):
         fc_part: Fully connected layers for final classification.
     """
 
-    def __init__(self, config: DeepFontConfig | None = None, **kwargs):
+    def __init__(self, config: DeepFontConfig | None = None):
         """Initializes the DeepFont classification model.
 
         Constructs the full architecture including encoder, convolutional layers,
@@ -256,11 +252,7 @@ class DeepFont(nn.Module):
 
         Args:
             config: A DeepFontConfig controlling every architectural
-                parameter.  When None, a default config is created from any
-                additional **kwargs (for backward compatibility).
-            **kwargs: Forwarded to DeepFontConfig when config is
-                None.  Accepted keys include num_classes,
-                encoder_channels, dropout_rate, etc.
+                parameter.  When None, a default config is used.
 
         Raises:
             ValueError: If config validation fails (e.g. spatial dimensions
@@ -273,7 +265,7 @@ class DeepFont(nn.Module):
         """
         super().__init__()
         if config is None:
-            config = DeepFontConfig(**kwargs)
+            config = DeepFontConfig()
         self.config = config
 
         # Encoder
