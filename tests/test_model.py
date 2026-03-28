@@ -5,10 +5,10 @@ and encoder weight loading for both the DeepFontAE autoencoder and the
 DeepFont classifier.
 
 Test classes:
-    TestDeepFontAEInstantiation    -- constructor with config, kwargs, and defaults
+    TestDeepFontAEInstantiation    -- constructor with config and defaults
     TestDeepFontAEForward          -- forward pass shapes, finiteness, activations
     TestDeepFontAEArchitecture     -- encoder/decoder layer structure
-    TestDeepFontInstantiation      -- constructor with config, kwargs, and defaults
+    TestDeepFontInstantiation      -- constructor with config and defaults
     TestDeepFontForward            -- forward pass shapes, finiteness, logits
     TestDeepFontArchitecture       -- encoder/conv_part/fc_part layer structure
     TestLoadEncoderWeights         -- weight loading, freezing, and layer remapping
@@ -73,7 +73,7 @@ def _count_layer_types(module: nn.Module, layer_type: type) -> int:
 
 
 class TestDeepFontAEInstantiation:
-    """DeepFontAE constructor accepts config objects, kwargs, and defaults."""
+    """DeepFontAE constructor accepts config objects and defaults."""
 
     def test_default_config(self):
         """Default constructor creates a valid model."""
@@ -86,10 +86,10 @@ class TestDeepFontAEInstantiation:
         model = DeepFontAE(config)
         assert model.config is config
 
-    def test_with_kwargs(self):
-        """Constructor creates config from keyword arguments when config is None."""
-        model = DeepFontAE(output_activation="sigmoid")
-        assert model.config.output_activation == "sigmoid"
+    def test_kwargs_rejected(self):
+        """Constructor does not accept keyword arguments besides config."""
+        with pytest.raises(TypeError):
+            DeepFontAE(output_activation="sigmoid")
 
     def test_has_encoder_attribute(self):
         """Model exposes an encoder sub-module."""
@@ -279,7 +279,7 @@ class TestDeepFontAEArchitecture:
 
 
 class TestDeepFontInstantiation:
-    """DeepFont constructor accepts config objects, kwargs, and defaults."""
+    """DeepFont constructor accepts config objects and defaults."""
 
     def test_default_config(self):
         """Default constructor creates a valid model."""
@@ -292,10 +292,10 @@ class TestDeepFontInstantiation:
         model = DeepFont(config)
         assert model.config is config
 
-    def test_with_kwargs(self):
-        """Constructor creates config from keyword arguments when config is None."""
-        model = DeepFont(num_classes=50)
-        assert model.config.num_classes == 50
+    def test_kwargs_rejected(self):
+        """Constructor does not accept keyword arguments besides config."""
+        with pytest.raises(TypeError):
+            DeepFont(num_classes=50)
 
     def test_has_encoder_attribute(self):
         """Model exposes an encoder sub-module."""
@@ -480,9 +480,9 @@ class TestDeepFontArchitecture:
 class TestLoadEncoderWeights:
     """Encoder weight loading, freezing, and layer remapping."""
 
-    def _save_ae_weights(self, path: str, **ae_kwargs) -> None:
+    def _save_ae_weights(self, path: str, config: DeepFontAEConfig | None = None) -> None:
         """Save a DeepFontAE state dict to path."""
-        model = DeepFontAE(**ae_kwargs)
+        model = DeepFontAE(config)
         torch.save(model.state_dict(), path)
 
     def test_loads_without_error(self, tmp_path):
@@ -547,7 +547,7 @@ class TestLoadEncoderWeights:
         """Weights transfer correctly from AE (no BN) to classifier (with BN)."""
         weights_path = str(tmp_path / "ae.pt")
         # AE without batch norm (default)
-        self._save_ae_weights(weights_path, use_batch_norm=False)
+        self._save_ae_weights(weights_path, DeepFontAEConfig(use_batch_norm=False))
         # Classifier with encoder batch norm (default)
         config = _small_df_config(use_encoder_batch_norm=True)
         model = DeepFont(config)

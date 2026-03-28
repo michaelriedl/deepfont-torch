@@ -1,3 +1,24 @@
+# Development Environment
+
+The project uses a `.venv` virtual environment managed by `uv`. Run all tools through the venv:
+
+```bash
+.venv/bin/pytest tests/ -v
+.venv/bin/ruff format --check deepfont
+.venv/bin/ruff check deepfont
+.venv/bin/ty check deepfont
+```
+
+## CI/CD Checks
+
+All three checks run on every pull request and must pass before merging:
+
+1. **Tests** (`pytest`): `pytest tests/ -v --tb=short --cov=deepfont` (Python 3.12 and 3.13)
+2. **Lint and format** (`ruff`): `ruff format --check deepfont` and `ruff check deepfont`
+3. **Type checking** (`ty`): `ty check deepfont`
+
+Run all three locally before pushing.
+
 # Coding Standards
 
 ## Language

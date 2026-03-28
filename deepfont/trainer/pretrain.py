@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LRScheduler
 
 from deepfont.data.datasets import PretrainData
+from deepfont.models.config import DeepFontAEConfig
 from deepfont.models.deepfont import DeepFontAE
 
 from .base import BaseTrainer
@@ -55,7 +56,8 @@ class PretrainTrainer(BaseTrainer):
 
     def create_model(self) -> nn.Module:
         """Return a DeepFontAE instance."""
-        return DeepFontAE(output_activation=self.config.output_activation)
+        config = DeepFontAEConfig(output_activation=self.config.output_activation)
+        return DeepFontAE(config)
 
     def create_dataloaders(self) -> tuple[DataLoader, DataLoader]:
         """Build PretrainData and split it.

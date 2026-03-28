@@ -17,6 +17,7 @@ import torch
 import pytest
 
 from deepfont.trainer.config import FinetuneConfig
+from deepfont.models.config import DeepFontConfig
 from deepfont.models.deepfont import DeepFont, DeepFontAE
 from deepfont.trainer.finetune import FinetuneTrainer
 
@@ -54,7 +55,7 @@ class TestTrainingStep:
 
     def setup_method(self):
         self.trainer = _make_trainer()
-        self.model = DeepFont(num_out=_NUM_CLASSES)
+        self.model = DeepFont(DeepFontConfig(num_classes=_NUM_CLASSES))
 
     def _batch(self) -> tuple[torch.Tensor, torch.Tensor]:
         images = torch.randn(4, 1, 105, 105)
@@ -100,7 +101,7 @@ class TestTrainingStep:
 
     def test_perfect_predictions_give_unit_accuracy(self):
         """When model always predicts the correct class, accuracy equals 1.0."""
-        model = DeepFont(num_out=2)
+        model = DeepFont(DeepFontConfig(num_classes=2))
         # Force the last linear layer to predict class 0 with certainty
         with torch.no_grad():
             model.fc_part[-1].weight.zero_()
@@ -119,7 +120,7 @@ class TestValidationStep:
 
     def setup_method(self):
         self.trainer = _make_trainer()
-        self.model = DeepFont(num_out=_NUM_CLASSES)
+        self.model = DeepFont(DeepFontConfig(num_classes=_NUM_CLASSES))
 
     def _batch(self) -> tuple[torch.Tensor, torch.Tensor]:
         images = torch.randn(4, 1, 105, 105)
@@ -155,7 +156,7 @@ class TestCreateOptimizer:
     """create_optimizer() returns an Adam optimizer with the configured hyperparams."""
 
     def setup_method(self):
-        self.model = DeepFont(num_out=_NUM_CLASSES)
+        self.model = DeepFont(DeepFontConfig(num_classes=_NUM_CLASSES))
 
     def test_returns_adam_optimizer(self):
         optim, _ = _make_trainer().create_optimizer(self.model)
@@ -192,7 +193,7 @@ class TestCreateOptimizer:
         encoder_weights = str(tmp_path / "encoder.pt")
         _save_fake_encoder_weights(encoder_weights)
 
-        model = DeepFont(num_out=_NUM_CLASSES)
+        model = DeepFont(DeepFontConfig(num_classes=_NUM_CLASSES))
         model.load_encoder_weights(encoder_weights)
 
         optim, _ = _make_trainer(encoder_weights_path=encoder_weights).create_optimizer(model)

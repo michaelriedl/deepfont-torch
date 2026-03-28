@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LRScheduler
 
 from deepfont.data.datasets import EvalData, FinetuneData
+from deepfont.models.config import DeepFontConfig
 from deepfont.models.deepfont import DeepFont
 
 from .base import BaseTrainer
@@ -61,7 +62,7 @@ class FinetuneTrainer(BaseTrainer):
         If config.encoder_weights_path is set, the pretrained AE encoder
         weights are loaded and frozen before training begins.
         """
-        model = DeepFont(num_classes=self.config.num_classes)
+        model = DeepFont(DeepFontConfig(num_classes=self.config.num_classes))
         if self.config.encoder_weights_path is not None:
             model.load_encoder_weights(self.config.encoder_weights_path)
         return model
