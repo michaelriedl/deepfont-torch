@@ -1,4 +1,5 @@
 from dataclasses import field, dataclass
+from typing import Literal
 
 
 @dataclass
@@ -66,7 +67,7 @@ class PretrainConfig(TrainerConfig):
     reconstruction_loss: str = "mse"  # "mse" or "l1"
 
     # Model
-    output_activation: str | None = None  # None | "sigmoid" | "relu"
+    output_activation: Literal["sigmoid", "relu"] | None = None
 
 
 @dataclass
