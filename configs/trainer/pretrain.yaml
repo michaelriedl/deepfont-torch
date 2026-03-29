@@ -26,7 +26,7 @@ limit_val_batches: null  # cap validation batches per epoch; null = use all
 val_frequency: 1
 
 # Checkpointing
-checkpoint_dir: "./checkpoints"
+checkpoint_dir: "${paths.output_dir}/checkpoints"
 checkpoint_frequency: 1
 
 # Logging
