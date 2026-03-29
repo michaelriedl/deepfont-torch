@@ -8,6 +8,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LRScheduler
 
+from deepfont.data.config import EvalDataConfig, FinetuneDataConfig
 from deepfont.data.datasets import EvalData, FinetuneData
 from deepfont.models.config import DeepFontConfig
 from deepfont.models.deepfont import DeepFont
@@ -29,17 +30,23 @@ class FinetuneTrainer(BaseTrainer):
 
     Example:
         >>> from deepfont.trainer import FinetuneTrainer, FinetuneConfig
+        >>> from deepfont.data.config import FinetuneDataConfig, EvalDataConfig
+        >>> from deepfont.models.config import DeepFontConfig
         >>> config = FinetuneConfig(
-        ...     bcf_store_file="data/finetune.bcf",
-        ...     label_file="data/finetune.labels",
-        ...     eval_bcf_store_file="data/test.bcf",
-        ...     eval_label_file="data/test.labels",
         ...     encoder_weights_path="checkpoints/encoder_weights.pt",
-        ...     num_classes=2383,
         ...     learning_rate=1e-4,
         ...     max_epochs=30,
         ... )
-        >>> trainer = FinetuneTrainer(config)
+        >>> model_config = DeepFontConfig(num_classes=2383)
+        >>> data_config = FinetuneDataConfig(
+        ...     synthetic_bcf_file="data/finetune.bcf",
+        ...     label_file="data/finetune.labels",
+        ... )
+        >>> eval_data_config = EvalDataConfig(
+        ...     synthetic_bcf_file="data/test.bcf",
+        ...     label_file="data/test.labels",
+        ... )
+        >>> trainer = FinetuneTrainer(config, model_config, data_config, eval_data_config)
         >>> trainer.fit()
         >>> results = trainer.evaluate(ckpt_path="checkpoints/epoch-0030.ckpt")
         >>> print(results["accuracy"])
@@ -48,11 +55,19 @@ class FinetuneTrainer(BaseTrainer):
     def __init__(
         self,
         config: FinetuneConfig,
+        model_config: DeepFontConfig,
+        data_config: FinetuneDataConfig,
+        eval_data_config: EvalDataConfig | None = None,
         loggers=None,
         callbacks=None,
     ) -> None:
         super().__init__(config, loggers=loggers, callbacks=callbacks)
         self.config: FinetuneConfig = config
+        self.model_config = model_config
+        self.data_config = data_config
+        self.eval_data_config = (
+            eval_data_config if eval_data_config is not None else EvalDataConfig()
+        )
 
     # BaseTrainer abstract interface
 
@@ -62,7 +77,7 @@ class FinetuneTrainer(BaseTrainer):
         If config.encoder_weights_path is set, the pretrained AE encoder
         weights are loaded and frozen before training begins.
         """
-        model = DeepFont(DeepFontConfig(num_classes=self.config.num_classes))
+        model = DeepFont(self.model_config)
         if self.config.encoder_weights_path is not None:
             model.load_encoder_weights(self.config.encoder_weights_path)
         return model
@@ -76,12 +91,7 @@ class FinetuneTrainer(BaseTrainer):
         Returns:
             (train_loader, val_loader) ready for fit().
         """
-        dataset = FinetuneData(
-            bcf_store_file=self.config.bcf_store_file,
-            label_file=self.config.label_file,
-            aug_prob=self.config.aug_prob,
-            image_normalization=self.config.image_normalization,
-        )
+        dataset = FinetuneData(self.data_config)
         train_set, val_set = dataset.split_data_random(train_ratio=self.config.train_ratio)
 
         # Disable augmentation for the validation split
@@ -203,13 +213,13 @@ class FinetuneTrainer(BaseTrainer):
             - "total" -- total number of images evaluated
 
         Raises:
-            ValueError: If eval_bcf_store_file or eval_label_file is
-                not set in the config.
+            ValueError: If eval_data_config.synthetic_bcf_file or
+                eval_data_config.label_file is not set.
         """
-        if not self.config.eval_bcf_store_file or not self.config.eval_label_file:
+        if not self.eval_data_config.synthetic_bcf_file or not self.eval_data_config.label_file:
             raise ValueError(
-                "Both eval_bcf_store_file and eval_label_file must be set in "
-                "FinetuneConfig before calling evaluate()."
+                "Both synthetic_bcf_file and label_file must be set in "
+                "EvalDataConfig before calling evaluate()."
             )
 
         self._ensure_launched()
@@ -224,12 +234,7 @@ class FinetuneTrainer(BaseTrainer):
             state: dict = {"model": model}
             self.fabric.load(ckpt_path, state)
 
-        eval_dataset = EvalData(
-            bcf_store_file=self.config.eval_bcf_store_file,
-            label_file=self.config.eval_label_file,
-            image_normalization=self.config.image_normalization,
-            num_image_crops=self.config.num_image_crops,
-        )
+        eval_dataset = EvalData(self.eval_data_config)
         eval_loader = DataLoader(
             eval_dataset,
             batch_size=self.config.val_batch_size,

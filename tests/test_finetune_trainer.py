@@ -16,9 +16,10 @@ Test classes:
 import torch
 import pytest
 
-from deepfont.trainer.config import FinetuneConfig
+from deepfont.data.config import EvalDataConfig, FinetuneDataConfig
 from deepfont.models.config import DeepFontConfig
 from deepfont.models.deepfont import DeepFont, DeepFontAE
+from deepfont.trainer.config import FinetuneConfig
 from deepfont.trainer.finetune import FinetuneTrainer
 
 # Helper factory
@@ -26,20 +27,32 @@ from deepfont.trainer.finetune import FinetuneTrainer
 _NUM_CLASSES = 10  # small class count keeps forward passes fast
 
 
-def _make_trainer(**overrides) -> FinetuneTrainer:
-    """Return a CPU FinetuneTrainer configured for fast unit tests.
-
-    Keyword arguments in *overrides* replace the defaults, so callers can
-    set any FinetuneConfig field (including num_classes) without conflicts.
-    """
+def _make_trainer(
+    config_overrides: dict | None = None,
+    model_config: DeepFontConfig | None = None,
+    data_config: FinetuneDataConfig | None = None,
+    eval_data_config: EvalDataConfig | None = None,
+) -> FinetuneTrainer:
+    """Return a CPU FinetuneTrainer configured for fast unit tests."""
     defaults = dict(
         accelerator="cpu",
         devices=1,
         num_workers=0,
-        num_classes=_NUM_CLASSES,
     )
-    defaults.update(overrides)
-    return FinetuneTrainer(FinetuneConfig(**defaults))
+    if config_overrides:
+        defaults.update(config_overrides)
+    config = FinetuneConfig(**defaults)
+
+    kwargs = {}
+    if eval_data_config is not None:
+        kwargs["eval_data_config"] = eval_data_config
+
+    return FinetuneTrainer(
+        config,
+        model_config=model_config or DeepFontConfig(num_classes=_NUM_CLASSES),
+        data_config=data_config or FinetuneDataConfig(),
+        **kwargs,
+    )
 
 
 def _save_fake_encoder_weights(path: str) -> None:
@@ -110,7 +123,7 @@ class TestTrainingStep:
 
         images = torch.randn(4, 1, 105, 105)
         labels = torch.zeros(4, dtype=torch.long)  # all class 0
-        trainer = _make_trainer(num_classes=2)
+        trainer = _make_trainer(model_config=DeepFontConfig(num_classes=2))
         out = trainer.training_step(model, (images, labels), 0)
         assert out["acc"].item() == pytest.approx(1.0)
 
@@ -164,12 +177,16 @@ class TestCreateOptimizer:
 
     def test_learning_rate_matches_config(self):
         lr = 5e-4
-        optim, _ = _make_trainer(learning_rate=lr).create_optimizer(self.model)
+        optim, _ = _make_trainer(config_overrides={"learning_rate": lr}).create_optimizer(
+            self.model
+        )
         assert optim.param_groups[0]["lr"] == pytest.approx(lr)
 
     def test_weight_decay_matches_config(self):
         wd = 1e-4
-        optim, _ = _make_trainer(weight_decay=wd).create_optimizer(self.model)
+        optim, _ = _make_trainer(config_overrides={"weight_decay": wd}).create_optimizer(
+            self.model
+        )
         assert optim.param_groups[0]["weight_decay"] == pytest.approx(wd)
 
     def test_no_scheduler_by_default(self):
@@ -178,13 +195,13 @@ class TestCreateOptimizer:
 
     def test_cosine_scheduler_when_configured(self):
         _, sched = _make_trainer(
-            scheduler_type="cosine", scheduler_kwargs={"T_max": 10}
+            config_overrides={"scheduler_type": "cosine", "scheduler_kwargs": {"T_max": 10}}
         ).create_optimizer(self.model)
         assert isinstance(sched, torch.optim.lr_scheduler.CosineAnnealingLR)
 
     def test_step_scheduler_when_configured(self):
         _, sched = _make_trainer(
-            scheduler_type="step", scheduler_kwargs={"step_size": 5}
+            config_overrides={"scheduler_type": "step", "scheduler_kwargs": {"step_size": 5}}
         ).create_optimizer(self.model)
         assert isinstance(sched, torch.optim.lr_scheduler.StepLR)
 
@@ -196,7 +213,9 @@ class TestCreateOptimizer:
         model = DeepFont(DeepFontConfig(num_classes=_NUM_CLASSES))
         model.load_encoder_weights(encoder_weights)
 
-        optim, _ = _make_trainer(encoder_weights_path=encoder_weights).create_optimizer(model)
+        optim, _ = _make_trainer(
+            config_overrides={"encoder_weights_path": encoder_weights}
+        ).create_optimizer(model)
 
         trainable_count = sum(1 for p in model.parameters() if p.requires_grad)
         optimizer_count = sum(len(pg["params"]) for pg in optim.param_groups)
@@ -212,7 +231,7 @@ class TestCreateModel:
         assert isinstance(model, DeepFont)
 
     def test_num_classes_respected(self):
-        trainer = _make_trainer(num_classes=5)
+        trainer = _make_trainer(model_config=DeepFontConfig(num_classes=5))
         model = trainer.create_model()
         assert model.config.num_classes == 5
 
@@ -227,7 +246,7 @@ class TestCreateModel:
         encoder_weights = str(tmp_path / "encoder.pt")
         _save_fake_encoder_weights(encoder_weights)
 
-        trainer = _make_trainer(encoder_weights_path=encoder_weights)
+        trainer = _make_trainer(config_overrides={"encoder_weights_path": encoder_weights})
         model = trainer.create_model()
 
         frozen = {name for name, p in model.encoder.named_parameters() if not p.requires_grad}
@@ -241,7 +260,7 @@ class TestCreateModel:
         encoder_weights = str(tmp_path / "encoder.pt")
         _save_fake_encoder_weights(encoder_weights)
 
-        trainer = _make_trainer(encoder_weights_path=encoder_weights)
+        trainer = _make_trainer(config_overrides={"encoder_weights_path": encoder_weights})
         model = trainer.create_model()
 
         assert all(p.requires_grad for p in model.conv_part.parameters())
@@ -251,16 +270,20 @@ class TestCreateModel:
 class TestEvaluate:
     """evaluate() raises ValueError when eval data paths are not configured."""
 
-    def test_raises_when_eval_bcf_store_file_is_empty(self):
-        """Missing eval_bcf_store_file triggers a descriptive ValueError."""
-        trainer = _make_trainer(eval_label_file="test.labels")
-        with pytest.raises(ValueError, match="eval_bcf_store_file"):
+    def test_raises_when_eval_synthetic_bcf_file_is_empty(self):
+        """Missing synthetic_bcf_file triggers a descriptive ValueError."""
+        trainer = _make_trainer(
+            eval_data_config=EvalDataConfig(label_file="test.labels"),
+        )
+        with pytest.raises(ValueError, match="synthetic_bcf_file"):
             trainer.evaluate()
 
     def test_raises_when_eval_label_file_is_empty(self):
-        """Missing eval_label_file triggers a descriptive ValueError."""
-        trainer = _make_trainer(eval_bcf_store_file="test.bcf")
-        with pytest.raises(ValueError, match="eval_label_file"):
+        """Missing label_file triggers a descriptive ValueError."""
+        trainer = _make_trainer(
+            eval_data_config=EvalDataConfig(synthetic_bcf_file="test.bcf"),
+        )
+        with pytest.raises(ValueError, match="label_file"):
             trainer.evaluate()
 
     def test_raises_when_both_eval_paths_are_empty(self):

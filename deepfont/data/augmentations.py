@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 import cv2
 import numpy as np
@@ -185,7 +185,9 @@ class ResizeHeightSqueezeWidth(DualTransform):
         return "height", "width_scale", "interpolation"
 
 
-def augmentation_pipeline(image: np.ndarray, image_type: str, aug_prob: float) -> np.ndarray:
+def augmentation_pipeline(
+    image: np.ndarray, image_type: Literal["synthetic", "real"], aug_prob: float
+) -> np.ndarray:
     """Applies the appropriate augmentation pipeline based on image type.
 
     This function routes images to either the synthetic or real image augmentation
