@@ -5,9 +5,8 @@ defaults:
   - data: finetune # choose datamodule with `test_dataloader()` for evaluation
   - model: deepfont
   - logger: null
-  - trainer: default
+  - trainer: finetune
   - paths: default
-  - extras: default
   - hydra: default
 
 task_name: "eval"
