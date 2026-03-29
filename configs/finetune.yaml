@@ -1,0 +1,38 @@
+# @package _global_
+
+# specify here default configuration
+# order of defaults determines the order in which configs override each other
+defaults:
+  - _self_
+  - data: finetune
+  - model: deepfont
+  - callbacks: default
+  - logger: null # set logger here or use command line (e.g. `python finetune.py logger=tensorboard`)
+  - trainer: finetune
+  - paths: default
+  - hydra: default
+
+  # experiment configs allow for version control of specific hyperparameters
+  # e.g. best hyperparameters for given model and datamodule
+  - experiment: null
+
+  # optional local config for machine/user specific settings
+  # it's optional since it doesn't need to exist and is excluded from version control
+  - optional local: default
+
+# task name, determines output directory path
+task_name: "finetune"
+
+# tags to help you identify your experiments
+# you can overwrite this in experiment configs
+# overwrite from command line with `python finetune.py tags="[first_tag, second_tag]"`
+tags: ["dev"]
+
+# set False to skip model training
+train: True
+
+# evaluate on test set, using best model weights achieved during training
+test: True
+
+# simply provide checkpoint path to resume training
+ckpt_path: null
