@@ -1,0 +1,36 @@
+# @package _global_
+
+# Pretrain smoke test -- minimal CPU run for pipeline verification.
+# Usage: python scripts/pretrain.py experiment=pretrain_smoke_test
+
+defaults:
+  - override /data: pretrain
+  - override /model: deepfont_ae
+  - override /trainer: pretrain
+
+task_name: "pretrain_smoke_test"
+tags: ["smoke_test"]
+
+# Data: synthetic only, no augmentation
+data:
+  real_image_dir: null
+  aug_prob: 0.0
+
+# Trainer: minimal run
+trainer:
+  accelerator: "cpu"
+  devices: 1
+  max_epochs: 2
+  batch_size: 4
+  val_batch_size: 4
+  num_workers: 0
+  seed: 42
+  log_every_n_steps: 1
+  val_frequency: 1
+  checkpoint_frequency: 1
+  upsample_real_images: false
+  limit_train_batches: 5
+  limit_val_batches: 5
+
+train: true
+test: false

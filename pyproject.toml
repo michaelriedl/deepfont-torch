@@ -19,6 +19,8 @@ dependencies = [
     "lightning>=2.4.0",
     "tqdm>=4.0",
     "pydantic>=2.12",
+    "hydra-colorlog>=1.2.0",
+    "rich>=14.0.0",
 ]
 
 [dependency-groups]

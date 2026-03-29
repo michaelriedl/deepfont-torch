@@ -1,6 +1,8 @@
 # Configuration for PretrainDataConfig.
 # Data sources for the DeepFont autoencoder pretraining stage.
 
+_target_: deepfont.data.config.PretrainDataConfig
+
 # --- Data ---
 synthetic_bcf_file: "${paths.data_dir}deepfont_data/BCF format/VFR_syn_train/train.bcf" # path to the BCF store file containing synthetic font images
 real_image_dir: "${paths.data_dir}deepfont_data/Raw Image/VFR_real_u" # directory of real images; null = synthetic only

@@ -1,6 +1,8 @@
 # Configuration for FinetuneDataConfig.
 # Data source for the DeepFont supervised fine-tuning stage.
 
+_target_: deepfont.data.config.FinetuneDataConfig
+
 # --- Train / val data ---
 synthetic_bcf_file: "${paths.data_dir}deepfont_data/BCF format/VFR_syn_train/train.bcf" # path to the BCF store file containing synthetic font images
 label_file: "${paths.data_dir}deepfont_data/BCF format/VFR_syn_train/train.label" # path to the binary label file mapping image IDs to font classes

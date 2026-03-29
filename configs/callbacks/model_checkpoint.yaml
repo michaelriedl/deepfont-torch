@@ -1,11 +1,11 @@
-# @package _global_
-# Model-checkpoint callback — keeps the best-N checkpoints by a monitored metric.
+# Model-checkpoint callback -- keeps the best-N checkpoints by a monitored metric.
 # All fields correspond to ModelCheckpointCallback.__init__ parameters.
 # Instantiate with: hydra.utils.instantiate(cfg.callbacks.model_checkpoint)
 
-_target_: deepfont.callbacks.ModelCheckpointCallback
-monitor: val_loss
-mode: min
-save_top_k: 1
-filename: best
-verbose: true
+model_checkpoint:
+  _target_: deepfont.callbacks.ModelCheckpointCallback
+  monitor: val_loss
+  mode: min
+  save_top_k: 1
+  filename: best
+  verbose: true

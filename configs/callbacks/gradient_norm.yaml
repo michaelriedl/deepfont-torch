@@ -1,8 +1,8 @@
-# @package _global_
-# Gradient-norm monitor callback — logs post-clip gradient norm before each optimizer step.
+# Gradient-norm monitor callback -- logs post-clip gradient norm before each optimizer step.
 # All fields correspond to GradientNormMonitorCallback.__init__ parameters.
 # Instantiate with: hydra.utils.instantiate(cfg.callbacks.gradient_norm)
 
-_target_: deepfont.callbacks.GradientNormMonitorCallback
-norm_type: 2.0
-log_every_n_steps: 10
+gradient_norm:
+  _target_: deepfont.callbacks.GradientNormMonitorCallback
+  norm_type: 2.0
+  log_every_n_steps: 10

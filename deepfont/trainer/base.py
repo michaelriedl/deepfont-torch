@@ -216,13 +216,23 @@ class BaseTrainer(ABC):
         model.train()
         self.fabric.call("on_train_epoch_start", trainer=self)
 
+        total = len(train_loader)
+        if self.config.limit_train_batches is not None:
+            total = min(total, self.config.limit_train_batches)
+
         iterable = self._progbar(
             train_loader,
-            total=len(train_loader),
+            total=total,
             desc=f"Epoch {self.current_epoch} [train]",
         )
 
         for batch_idx, batch in enumerate(iterable):
+            if (
+                self.config.limit_train_batches is not None
+                and batch_idx >= self.config.limit_train_batches
+            ):
+                break
+
             self.fabric.call("on_train_batch_start", batch=batch, batch_idx=batch_idx, trainer=self)
 
             # Defer gradient sync during accumulation steps (speeds up DDP).
@@ -277,12 +287,22 @@ class BaseTrainer(ABC):
         accumulated: dict[str, list[torch.Tensor]] = {}
 
         with torch.no_grad():
+            total = len(val_loader)
+            if self.config.limit_val_batches is not None:
+                total = min(total, self.config.limit_val_batches)
+
             iterable = self._progbar(
                 val_loader,
-                total=len(val_loader),
+                total=total,
                 desc=f"Epoch {self.current_epoch} [val]",
             )
             for batch_idx, batch in enumerate(iterable):
+                if (
+                    self.config.limit_val_batches is not None
+                    and batch_idx >= self.config.limit_val_batches
+                ):
+                    break
+
                 self.fabric.call(
                     "on_validation_batch_start", batch=batch, batch_idx=batch_idx, trainer=self
                 )

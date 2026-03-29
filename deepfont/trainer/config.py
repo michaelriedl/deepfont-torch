@@ -36,6 +36,16 @@ class TrainerConfig(BaseModel):
     train_ratio: float = Field(default=0.8, gt=0.0, lt=1.0)
     grad_accum_steps: int = Field(default=1, ge=1)
     gradient_clip_val: float | None = Field(default=None)
+    limit_train_batches: int | None = Field(
+        default=None,
+        ge=1,
+        description="Cap the number of training batches per epoch. None = use all.",
+    )
+    limit_val_batches: int | None = Field(
+        default=None,
+        ge=1,
+        description="Cap the number of validation batches per epoch. None = use all.",
+    )
 
     # Validation
     val_frequency: int = Field(default=1, ge=1)  # run a validation epoch every N training epochs
