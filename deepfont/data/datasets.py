@@ -10,6 +10,7 @@ from PIL import Image, ImageFile, PngImagePlugin
 from torch.utils.data import Dataset
 
 from .bcf import BCFStoreFile, read_label
+from .config import EvalDataConfig, FinetuneDataConfig, PretrainDataConfig
 from .augmentations import eval_pipeline, augmentation_pipeline
 
 PngImagePlugin.MAX_TEXT_CHUNK = 1048576 * 10  # ty: ignore[invalid-assignment]
@@ -40,8 +41,9 @@ class PretrainData(Dataset):
         - Multiple normalization schemes (0-1 or -1 to 1)
 
     Attributes:
-        bcf_store_file: Path to the BCF store file containing synthetic images.
-        data_folder_name: Path to the directory containing real images.
+        config: PretrainDataConfig instance controlling data sources and augmentation.
+        synthetic_bcf_file: Path to the BCF store file containing synthetic images.
+        real_image_dir: Path to the directory containing real images.
         aug_prob: Probability of applying each augmentation (0.0 to 1.0).
         image_normalization: Normalization scheme ("0to1" or "-1to1").
         bcf_store: BCFStoreFile instance for reading synthetic images.
@@ -51,13 +53,7 @@ class PretrainData(Dataset):
         num_cached_images: Number of images currently cached.
     """
 
-    def __init__(
-        self,
-        bcf_store_file: str,
-        data_folder_name: str | None,
-        aug_prob: float,
-        image_normalization: str = "0to1",
-    ):
+    def __init__(self, config: PretrainDataConfig):
         """Initializes the PretrainData dataset with synthetic and real images.
 
         Loads synthetic images from a BCF store file and discovers real images in
@@ -65,33 +61,22 @@ class PretrainData(Dataset):
         validates the normalization scheme.
 
         Args:
-            bcf_store_file: The path to the BCF store file containing concatenated
-                synthetic images. The file must be in valid BCF format.
-            data_folder_name: The path to the directory containing real images.
-                Supports .png, .jpg, .jpeg, and .gif files. Can be None if using
-                only synthetic images.
-            aug_prob: The probability (0.0 to 1.0) of applying each augmentation
-                in the pipeline. Higher values result in more aggressive augmentation.
-                Typical values range from 0.3 to 0.8.
-            image_normalization: The normalization scheme to apply to images.
-                Either "0to1" (scales to [0, 1]) or "-1to1" (scales to [-1, 1]).
-                Default is "0to1".
+            config: A PretrainDataConfig instance specifying the data sources
+                and augmentation settings. The config is validated at construction
+                time via Pydantic.
 
         Raises:
-            ValueError: If image_normalization is not "0to1" or "-1to1".
-            FileNotFoundError: If bcf_store_file doesn't exist.
+            FileNotFoundError: If synthetic_bcf_file doesn't exist.
             IOError: If the BCF file cannot be read.
         """
-        # Store the parameters
-        self.bcf_store_file = bcf_store_file
-        self.data_folder_name = data_folder_name
-        self.aug_prob = aug_prob
-        self.image_normalization = image_normalization
-        # Check the feature normalization type
-        if self.image_normalization not in ["0to1", "-1to1"]:
-            raise ValueError("The image normalization type must be either '0to1' or '-1to1'.")
+        # Store the config and extract mutable runtime parameters
+        self.config = config
+        self.synthetic_bcf_file = config.synthetic_bcf_file
+        self.real_image_dir = config.real_image_dir
+        self.aug_prob = config.aug_prob
+        self.image_normalization = config.image_normalization
         # Load the BCF store file
-        self.bcf_store = BCFStoreFile(bcf_store_file)
+        self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
         # Find the number of synthetic images
         self.num_syn_images = self.bcf_store.size()
         # Create the sythetic image index list
@@ -167,11 +152,11 @@ class PretrainData(Dataset):
                 BytesIO(self.bcf_store.get(int(self.syn_image_index_list[index])))
             ).convert("L")
         else:
-            assert self.data_folder_name is not None
+            assert self.real_image_dir is not None
             # Get the real image
             image = Image.open(
                 os.path.join(
-                    self.data_folder_name,
+                    self.real_image_dir,
                     self.real_image_name_list[index - self.num_syn_images],
                 )
             ).convert("L")
@@ -179,7 +164,7 @@ class PretrainData(Dataset):
             while 0 in image.size or 1 in image.size:
                 image = Image.open(
                     os.path.join(
-                        self.data_folder_name,
+                        self.real_image_dir,
                         self.real_image_name_list[np.random.randint(0, self.num_real_images)],
                     )
                 ).convert("L")
@@ -288,18 +273,18 @@ class PretrainData(Dataset):
         Returns:
             A tuple of (num_images, image_names) where num_images is the count of
             found images and image_names is a list of filenames (not full paths).
-            Returns (0, []) if data_folder_name is None.
+            Returns (0, []) if real_image_dir is None.
 
         Note:
             Only the filename is stored, not the full path. The full path is
-            constructed at load time by joining with data_folder_name.
+            constructed at load time by joining with real_image_dir.
         """
-        if self.data_folder_name is None:
+        if self.real_image_dir is None:
             return 0, []
         # Get the image names
         image_name_list = [
             x
-            for x in os.listdir(self.data_folder_name)
+            for x in os.listdir(self.real_image_dir)
             if x.endswith((".png", ".jpg", ".jpeg", ".gif"))
         ]
         # Return the number of images and their names
@@ -382,7 +367,8 @@ class FinetuneData(Dataset):
         - Automatic validation of image-label correspondence
 
     Attributes:
-        bcf_store_file: Path to the BCF store file containing labeled synthetic images.
+        config: FinetuneDataConfig instance controlling data source and augmentation.
+        synthetic_bcf_file: Path to the BCF store file containing labeled synthetic images.
         label_file: Path to the binary label file (uint32 format).
         aug_prob: Probability of applying each augmentation (0.0 to 1.0).
         image_normalization: Normalization scheme ("0to1" or "-1to1").
@@ -393,13 +379,7 @@ class FinetuneData(Dataset):
         num_cached_images: Number of images currently cached.
     """
 
-    def __init__(
-        self,
-        bcf_store_file: str,
-        label_file: str,
-        aug_prob: float,
-        image_normalization: str = "0to1",
-    ):
+    def __init__(self, config: FinetuneDataConfig):
         """Initializes the FinetuneData dataset with labeled synthetic images.
 
         Loads images from a BCF store and their corresponding labels from a binary
@@ -407,35 +387,25 @@ class FinetuneData(Dataset):
         data consistency.
 
         Args:
-            bcf_store_file: The path to the BCF store file containing synthetic
-                images. Must be in valid BCF format.
-            label_file: The path to the binary label file containing uint32 class
-                labels. Must have exactly one label per image in the BCF store.
-            aug_prob: The probability (0.0 to 1.0) of applying each augmentation
-                in the synthetic pipeline. Higher values increase augmentation
-                strength. Typical values: 0.3-0.8 for training, 0.0 for validation.
-            image_normalization: The normalization scheme for pixel values.
-                Either "0to1" (scales to [0, 1]) or "-1to1" (scales to [-1, 1]).
-                Default is "0to1".
+            config: A FinetuneDataConfig instance specifying the data source
+                and augmentation settings. The config is validated at construction
+                time via Pydantic.
 
         Raises:
-            ValueError: If image_normalization is not "0to1" or "-1to1", or if
-                the number of images and labels don't match.
-            FileNotFoundError: If bcf_store_file or label_file doesn't exist.
+            ValueError: If the number of images and labels don't match.
+            FileNotFoundError: If synthetic_bcf_file or label_file doesn't exist.
             IOError: If the files cannot be read.
         """
-        # Store the parameters
-        self.bcf_store_file = bcf_store_file
-        self.label_file = label_file
-        self.aug_prob = aug_prob
-        self.image_normalization = image_normalization
-        # Check the feature normalization type
-        if self.image_normalization not in ["0to1", "-1to1"]:
-            raise ValueError("The image normalization type must be either '0to1' or '-1to1'.")
+        # Store the config and extract mutable runtime parameters
+        self.config = config
+        self.synthetic_bcf_file = config.synthetic_bcf_file
+        self.label_file = config.label_file
+        self.aug_prob = config.aug_prob
+        self.image_normalization = config.image_normalization
         # Load the BCF store file
-        self.bcf_store = BCFStoreFile(bcf_store_file)
+        self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
         # Load the labels
-        self.labels = read_label(label_file)
+        self.labels = read_label(self.label_file)
         # Find the number of images
         self.num_images = self.bcf_store.size()
         # Create the image index list
@@ -641,7 +611,8 @@ class EvalData(Dataset):
     (±15%) to ensure comprehensive coverage of possible image variations.
 
     Attributes:
-        bcf_store_file: Path to the BCF store file containing test images.
+        config: EvalDataConfig instance controlling data source and TTA settings.
+        synthetic_bcf_file: Path to the BCF store file containing test images.
         label_file: Path to the binary label file (uint32 format).
         image_normalization: Normalization scheme ("0to1" or "-1to1").
         num_image_crops: Number of augmented crops to generate per image.
@@ -650,48 +621,32 @@ class EvalData(Dataset):
         num_images: Total count of test images.
     """
 
-    def __init__(
-        self,
-        bcf_store_file: str,
-        label_file: str,
-        image_normalization: str = "0to1",
-        num_image_crops: int = 15,
-    ):
+    def __init__(self, config: EvalDataConfig):
         """Initializes the EvalData dataset for test-time augmentation.
 
         Loads images and labels for evaluation, configuring the test-time augmentation
         parameters. Validates that images and labels are properly paired.
 
         Args:
-            bcf_store_file: The path to the BCF store file containing test images.
-                Must be in valid BCF format.
-            label_file: The path to the binary label file containing uint32 class
-                labels. Must have exactly one label per image.
-            image_normalization: The normalization scheme for pixel values.
-                Either "0to1" (scales to [0, 1]) or "-1to1" (scales to [-1, 1]).
-                Default is "0to1".
-            num_image_crops: The number of augmented crops to generate per image
-                for test-time augmentation. More crops improve accuracy but increase
-                computation time. Typical values: 10-20. Default is 15.
+            config: An EvalDataConfig instance specifying the data source and
+                TTA settings. The config is validated at construction time via
+                Pydantic.
 
         Raises:
-            ValueError: If image_normalization is not "0to1" or "-1to1", or if
-                the number of images and labels don't match.
-            FileNotFoundError: If bcf_store_file or label_file doesn't exist.
+            ValueError: If the number of images and labels don't match.
+            FileNotFoundError: If synthetic_bcf_file or label_file doesn't exist.
             IOError: If the files cannot be read.
         """
-        # Store the parameters
-        self.bcf_store_file = bcf_store_file
-        self.label_file = label_file
-        self.image_normalization = image_normalization
-        self.num_image_crops = num_image_crops
-        # Check the feature normalization type
-        if self.image_normalization not in ["0to1", "-1to1"]:
-            raise ValueError("The image normalization type must be either '0to1' or '-1to1'.")
+        # Store the config and extract parameters
+        self.config = config
+        self.synthetic_bcf_file = config.synthetic_bcf_file
+        self.label_file = config.label_file
+        self.image_normalization = config.image_normalization
+        self.num_image_crops = config.num_image_crops
         # Load the BCF store file
-        self.bcf_store = BCFStoreFile(bcf_store_file)
+        self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
         # Load the labels
-        self.labels = read_label(label_file)
+        self.labels = read_label(self.label_file)
         # Find the number of images
         self.num_images = self.bcf_store.size()
         # Check that the images and labels are the same size
@@ -726,7 +681,11 @@ class EvalData(Dataset):
                 - label: Integer class label tensor with dtype int64 (long)
 
         Example:
-            >>> dataset = EvalData('test.bcf', 'test.labels', num_image_crops=10)
+            >>> dataset = EvalData(EvalDataConfig(
+            ...     synthetic_bcf_file='test.bcf',
+            ...     label_file='test.labels',
+            ...     num_image_crops=10,
+            ... ))
             >>> images, label = dataset[0]
             >>> images.shape
             torch.Size([10, 1, 105, 105])

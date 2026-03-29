@@ -1,15 +1,19 @@
-"""Tests for deepfont.trainer.config dataclasses.
+"""Tests for deepfont.trainer.config Pydantic configuration classes.
 
-These tests lock the default values of all three config dataclasses so that
+These tests lock the default values of all three config classes so that
 accidental field changes produce an immediate, descriptive failure rather than a
 silent regression.
 
 Test classes:
     TestTrainerConfigDefaults    -- pins every field default in TrainerConfig
+    TestTrainerConfigValidation  -- field constraints and immutability
     TestPretrainConfigDefaults   -- pins every field default in PretrainConfig
     TestFinetuneConfigDefaults   -- pins every field default in FinetuneConfig
     TestConfigInheritance        -- isinstance, override propagation, mutable defaults
 """
+
+import pytest
+from pydantic import ValidationError
 
 from deepfont.trainer.config import TrainerConfig, FinetuneConfig, PretrainConfig
 
@@ -66,20 +70,47 @@ class TestTrainerConfigDefaults:
         assert TrainerConfig().seed is None
 
 
+class TestTrainerConfigValidation:
+    """Field constraints and immutability for TrainerConfig."""
+
+    def test_config_is_frozen(self):
+        config = TrainerConfig()
+        with pytest.raises(ValidationError):
+            config.batch_size = 128
+
+    def test_max_epochs_none_accepted(self):
+        assert TrainerConfig(max_epochs=None).max_epochs is None
+
+    def test_max_epochs_positive_accepted(self):
+        assert TrainerConfig(max_epochs=50).max_epochs == 50
+
+    def test_max_epochs_zero_rejected(self):
+        with pytest.raises(ValidationError, match="max_epochs"):
+            TrainerConfig(max_epochs=0)
+
+    def test_max_epochs_negative_rejected(self):
+        with pytest.raises(ValidationError, match="max_epochs"):
+            TrainerConfig(max_epochs=-1)
+
+    def test_batch_size_zero_rejected(self):
+        with pytest.raises(ValidationError, match="batch_size"):
+            TrainerConfig(batch_size=0)
+
+    def test_num_workers_negative_rejected(self):
+        with pytest.raises(ValidationError, match="num_workers"):
+            TrainerConfig(num_workers=-1)
+
+    def test_train_ratio_zero_rejected(self):
+        with pytest.raises(ValidationError, match="train_ratio"):
+            TrainerConfig(train_ratio=0.0)
+
+    def test_train_ratio_one_rejected(self):
+        with pytest.raises(ValidationError, match="train_ratio"):
+            TrainerConfig(train_ratio=1.0)
+
+
 class TestPretrainConfigDefaults:
     """Pin default values for all PretrainConfig-specific fields."""
-
-    def test_bcf_store_file_default(self):
-        assert PretrainConfig().bcf_store_file == ""
-
-    def test_data_folder_name_default(self):
-        assert PretrainConfig().data_folder_name is None
-
-    def test_aug_prob_default(self):
-        assert PretrainConfig().aug_prob == 0.5
-
-    def test_image_normalization_default(self):
-        assert PretrainConfig().image_normalization == "0to1"
 
     def test_upsample_real_images_default(self):
         assert PretrainConfig().upsample_real_images is True
@@ -102,36 +133,15 @@ class TestPretrainConfigDefaults:
     def test_reconstruction_loss_default(self):
         assert PretrainConfig().reconstruction_loss == "mse"
 
-    def test_output_activation_default(self):
-        assert PretrainConfig().output_activation is None
-
 
 class TestFinetuneConfigDefaults:
     """Pin default values for all FinetuneConfig-specific fields."""
 
-    def test_bcf_store_file_default(self):
-        assert FinetuneConfig().bcf_store_file == ""
-
-    def test_label_file_default(self):
-        assert FinetuneConfig().label_file == ""
-
-    def test_aug_prob_default(self):
-        assert FinetuneConfig().aug_prob == 0.5
-
-    def test_image_normalization_default(self):
-        assert FinetuneConfig().image_normalization == "0to1"
-
     def test_num_images_to_cache_default(self):
         assert FinetuneConfig().num_images_to_cache == 0
 
-    def test_eval_bcf_store_file_default(self):
-        assert FinetuneConfig().eval_bcf_store_file == ""
-
-    def test_eval_label_file_default(self):
-        assert FinetuneConfig().eval_label_file == ""
-
-    def test_num_image_crops_default(self):
-        assert FinetuneConfig().num_image_crops == 15
+    def test_encoder_weights_path_default(self):
+        assert FinetuneConfig().encoder_weights_path is None
 
     def test_learning_rate_default(self):
         assert FinetuneConfig().learning_rate == 1e-4
@@ -144,12 +154,6 @@ class TestFinetuneConfigDefaults:
 
     def test_scheduler_kwargs_default(self):
         assert FinetuneConfig().scheduler_kwargs == {}
-
-    def test_num_classes_default(self):
-        assert FinetuneConfig().num_classes == 2383
-
-    def test_encoder_weights_path_default(self):
-        assert FinetuneConfig().encoder_weights_path is None
 
 
 class TestConfigInheritance:
