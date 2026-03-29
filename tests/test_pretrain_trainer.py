@@ -17,22 +17,34 @@ import os
 import torch
 import pytest
 
-from deepfont.trainer.config import PretrainConfig
+from deepfont.data.config import PretrainDataConfig
+from deepfont.models.config import DeepFontAEConfig
 from deepfont.models.deepfont import DeepFontAE
+from deepfont.trainer.config import PretrainConfig
 from deepfont.trainer.pretrain import PretrainTrainer
 
 # Helper factory
 
 
-def _make_trainer(**overrides) -> PretrainTrainer:
+def _make_trainer(
+    config_overrides: dict | None = None,
+    model_config: DeepFontAEConfig | None = None,
+    data_config: PretrainDataConfig | None = None,
+) -> PretrainTrainer:
     """Return a CPU PretrainTrainer configured for fast unit tests."""
-    config = PretrainConfig(
+    defaults = dict(
         accelerator="cpu",
         devices=1,
         num_workers=0,
-        **overrides,
     )
-    return PretrainTrainer(config)
+    if config_overrides:
+        defaults.update(config_overrides)
+    config = PretrainConfig(**defaults)
+    return PretrainTrainer(
+        config,
+        model_config=model_config or DeepFontAEConfig(),
+        data_config=data_config or PretrainDataConfig(),
+    )
 
 
 # Test classes
@@ -43,26 +55,26 @@ class TestReconstructionLoss:
 
     def test_mse_identical_tensors_is_zero(self):
         """MSE loss between a tensor and itself is zero."""
-        trainer = _make_trainer(reconstruction_loss="mse")
+        trainer = _make_trainer(config_overrides={"reconstruction_loss": "mse"})
         x = torch.randn(2, 1, 105, 105)
         assert trainer._reconstruction_loss(x, x).item() == pytest.approx(0.0)
 
     def test_l1_identical_tensors_is_zero(self):
         """L1 loss between a tensor and itself is zero."""
-        trainer = _make_trainer(reconstruction_loss="l1")
+        trainer = _make_trainer(config_overrides={"reconstruction_loss": "l1"})
         x = torch.randn(2, 1, 105, 105)
         assert trainer._reconstruction_loss(x, x).item() == pytest.approx(0.0)
 
     def test_mse_nonzero_for_different_tensors(self):
         """MSE loss is positive when pred and target differ."""
-        trainer = _make_trainer(reconstruction_loss="mse")
+        trainer = _make_trainer(config_overrides={"reconstruction_loss": "mse"})
         pred = torch.ones(2, 1, 105, 105)
         target = torch.zeros(2, 1, 105, 105)
         assert trainer._reconstruction_loss(pred, target).item() > 0.0
 
     def test_l1_nonzero_for_different_tensors(self):
         """L1 loss is positive when pred and target differ."""
-        trainer = _make_trainer(reconstruction_loss="l1")
+        trainer = _make_trainer(config_overrides={"reconstruction_loss": "l1"})
         pred = torch.ones(2, 1, 105, 105)
         target = torch.zeros(2, 1, 105, 105)
         assert trainer._reconstruction_loss(pred, target).item() > 0.0
@@ -71,14 +83,23 @@ class TestReconstructionLoss:
         """For pred=2, target=0: MSE==4 and L1==2 (distinct values)."""
         pred = torch.full((1,), 2.0)
         target = torch.zeros(1)
-        mse_val = _make_trainer(reconstruction_loss="mse")._reconstruction_loss(pred, target)
-        l1_val = _make_trainer(reconstruction_loss="l1")._reconstruction_loss(pred, target)
+        mse_val = _make_trainer(
+            config_overrides={"reconstruction_loss": "mse"}
+        )._reconstruction_loss(pred, target)
+        l1_val = _make_trainer(
+            config_overrides={"reconstruction_loss": "l1"}
+        )._reconstruction_loss(pred, target)
         assert mse_val.item() == pytest.approx(4.0)
         assert l1_val.item() == pytest.approx(2.0)
 
     def test_unknown_loss_type_raises_value_error(self):
         """An unrecognized reconstruction_loss string raises ValueError."""
-        trainer = _make_trainer(reconstruction_loss="huber")
+        # Pydantic Literal validation rejects invalid values at config construction,
+        # but we test the runtime path by constructing with a valid value and
+        # verifying the error message format
+        trainer = _make_trainer(config_overrides={"reconstruction_loss": "mse"})
+        # Temporarily override for the test
+        object.__setattr__(trainer.config, "reconstruction_loss", "huber")
         x = torch.randn(2, 1, 105, 105)
         with pytest.raises(ValueError, match="Unknown reconstruction_loss"):
             trainer._reconstruction_loss(x, x)
@@ -149,12 +170,16 @@ class TestCreateOptimizer:
 
     def test_learning_rate_matches_config(self):
         lr = 5e-4
-        optim, _ = _make_trainer(learning_rate=lr).create_optimizer(self.model)
+        optim, _ = _make_trainer(config_overrides={"learning_rate": lr}).create_optimizer(
+            self.model
+        )
         assert optim.param_groups[0]["lr"] == pytest.approx(lr)
 
     def test_weight_decay_matches_config(self):
         wd = 1e-4
-        optim, _ = _make_trainer(weight_decay=wd).create_optimizer(self.model)
+        optim, _ = _make_trainer(config_overrides={"weight_decay": wd}).create_optimizer(
+            self.model
+        )
         assert optim.param_groups[0]["weight_decay"] == pytest.approx(wd)
 
     def test_no_scheduler_by_default(self):
@@ -163,13 +188,13 @@ class TestCreateOptimizer:
 
     def test_cosine_scheduler_when_configured(self):
         optim, sched = _make_trainer(
-            scheduler_type="cosine", scheduler_kwargs={"T_max": 10}
+            config_overrides={"scheduler_type": "cosine", "scheduler_kwargs": {"T_max": 10}}
         ).create_optimizer(self.model)
         assert isinstance(sched, torch.optim.lr_scheduler.CosineAnnealingLR)
 
     def test_step_scheduler_when_configured(self):
         optim, sched = _make_trainer(
-            scheduler_type="step", scheduler_kwargs={"step_size": 5}
+            config_overrides={"scheduler_type": "step", "scheduler_kwargs": {"step_size": 5}}
         ).create_optimizer(self.model)
         assert isinstance(sched, torch.optim.lr_scheduler.StepLR)
 

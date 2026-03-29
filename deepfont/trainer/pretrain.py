@@ -9,6 +9,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LRScheduler
 
+from deepfont.data.config import PretrainDataConfig
 from deepfont.data.datasets import PretrainData
 from deepfont.models.config import DeepFontAEConfig
 from deepfont.models.deepfont import DeepFontAE
@@ -27,14 +28,19 @@ class PretrainTrainer(BaseTrainer):
 
     Example:
         >>> from deepfont.trainer import PretrainTrainer, PretrainConfig
+        >>> from deepfont.data.config import PretrainDataConfig
+        >>> from deepfont.models.config import DeepFontAEConfig
         >>> config = PretrainConfig(
-        ...     bcf_store_file="data/train.bcf",
-        ...     data_folder_name="data/real_images",
         ...     learning_rate=1e-3,
         ...     max_epochs=50,
         ...     batch_size=64,
         ... )
-        >>> trainer = PretrainTrainer(config)
+        >>> model_config = DeepFontAEConfig()
+        >>> data_config = PretrainDataConfig(
+        ...     synthetic_bcf_file="data/train.bcf",
+        ...     real_image_dir="data/real_images",
+        ... )
+        >>> trainer = PretrainTrainer(config, model_config, data_config)
         >>> trainer.fit()
         >>> trainer.save_encoder_weights(
         ...     ckpt_path="checkpoints/epoch-0050.ckpt",
@@ -45,19 +51,22 @@ class PretrainTrainer(BaseTrainer):
     def __init__(
         self,
         config: PretrainConfig,
+        model_config: DeepFontAEConfig,
+        data_config: PretrainDataConfig,
         loggers=None,
         callbacks=None,
     ) -> None:
         super().__init__(config, loggers=loggers, callbacks=callbacks)
         # Narrow the type so subclass code has access to PretrainConfig fields
         self.config: PretrainConfig = config
+        self.model_config = model_config
+        self.data_config = data_config
 
     # BaseTrainer abstract interface
 
     def create_model(self) -> nn.Module:
         """Return a DeepFontAE instance."""
-        config = DeepFontAEConfig(output_activation=self.config.output_activation)
-        return DeepFontAE(config)
+        return DeepFontAE(self.model_config)
 
     def create_dataloaders(self) -> tuple[DataLoader, DataLoader]:
         """Build PretrainData and split it.
@@ -65,12 +74,7 @@ class PretrainTrainer(BaseTrainer):
         Returns:
             (train_loader, val_loader) ready for fit().
         """
-        dataset = PretrainData(
-            bcf_store_file=self.config.bcf_store_file,
-            data_folder_name=self.config.data_folder_name,
-            aug_prob=self.config.aug_prob,
-            image_normalization=self.config.image_normalization,
-        )
+        dataset = PretrainData(self.data_config)
         train_set, val_set = dataset.split_data_random(train_ratio=self.config.train_ratio)
 
         # Balance real ↔ synthetic in the training split
