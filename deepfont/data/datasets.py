@@ -103,7 +103,9 @@ class PretrainData(Dataset):
         # Find the number of images and their names
         self.num_real_images, self.real_image_name_list = self._find_images()
         # Create the image cache
-        self.image_cache = []
+        self._cache_data: torch.Tensor | None = None
+        self._cache_offsets: torch.Tensor | None = None
+        self._cache_shapes: torch.Tensor | None = None
         self.num_cached_images = 0
 
     def __len__(self) -> int:
@@ -214,7 +216,12 @@ class PretrainData(Dataset):
         """
         # Check if the image is cached
         if self.num_cached_images > 0 and index < self.num_cached_images:
-            image = self.image_cache[index]
+            offset = self._cache_offsets[index].item()
+            h, w = self._cache_shapes[index]
+            # clone() so the augmentation pipeline doesn't write back
+            # into the cache buffer (which would also trigger COW copies
+            # in forked DataLoader workers).
+            image = self._cache_data[offset : offset + h * w].reshape(1, h, w).clone()
         else:
             image = self._load_image(index)
         # Apply the augmentation pipeline
@@ -334,9 +341,13 @@ class PretrainData(Dataset):
     def cache_images(self, num_images_to_cache: int):
         """Preloads images into memory for faster iteration during training.
 
-        Loads the first N images (in their raw, unaugmented form) into a cache
-        stored as a nested tensor. Cached images are loaded once and reused across
-        epochs, which significantly reduces I/O overhead at the cost of memory usage.
+        Loads the first N images (in their raw, unaugmented form) into a single
+        flat shared-memory tensor. An offsets tensor and shapes tensor allow
+        reconstructing individual images on access.
+
+        Using a single shared-memory tensor (instead of one per image) avoids
+        exhausting file descriptor limits and prevents copy-on-write duplication
+        when DataLoader workers are forked.
 
         Augmentations are still applied on-the-fly even to cached images, so each
         access returns a different augmented version.
@@ -355,15 +366,32 @@ class PretrainData(Dataset):
             This method is incompatible with split_data_random(). The cache must
             be empty before splitting, and should be repopulated after splitting.
         """
-        self.image_cache = []
         self.num_cached_images = min(num_images_to_cache, len(self))
-        # Cache the images
+        # First pass: record shapes to compute total size without
+        # keeping all image tensors in memory simultaneously.
+        shapes = []
+        total_pixels = 0
         for index in range(self.num_cached_images):
             image = self._load_image(index)
-            # Store the image
-            self.image_cache.append(image)
-        # Convert the image cache to a tensor
-        self.image_cache = torch.nested.nested_tensor(self.image_cache)
+            h, w = image.shape[1], image.shape[2]
+            shapes.append((h, w))
+            total_pixels += h * w
+        # Allocate the flat buffer and metadata tensors, then fill in
+        # a second pass so only one image is in memory at a time.
+        offsets = []
+        offset = 0
+        for h, w in shapes:
+            offsets.append(offset)
+            offset += h * w
+        self._cache_offsets = torch.tensor(offsets, dtype=torch.int64)
+        self._cache_shapes = torch.tensor(shapes, dtype=torch.int64)
+        self._cache_data = torch.empty(total_pixels, dtype=torch.uint8)
+        # Second pass: load images directly into the flat buffer.
+        for index in range(self.num_cached_images):
+            image = self._load_image(index)
+            o = self._cache_offsets[index].item()
+            h, w = shapes[index]
+            self._cache_data[o : o + h * w] = image.reshape(-1)
 
 
 class FinetuneData(Dataset):
@@ -433,7 +461,9 @@ class FinetuneData(Dataset):
         if self.num_images != len(self.labels):
             raise ValueError("The number of images and labels must be the same.")
         # Create the image cache
-        self.image_cache = []
+        self._cache_data: torch.Tensor | None = None
+        self._cache_offsets: torch.Tensor | None = None
+        self._cache_shapes: torch.Tensor | None = None
         self.num_cached_images = 0
 
     def __len__(self) -> int:
@@ -515,7 +545,12 @@ class FinetuneData(Dataset):
         """
         # Check if the image is cached
         if self.num_cached_images > 0 and index < self.num_cached_images:
-            image = self.image_cache[index]
+            offset = self._cache_offsets[index].item()
+            h, w = self._cache_shapes[index]
+            # clone() so the augmentation pipeline doesn't write back
+            # into the cache buffer (which would also trigger COW copies
+            # in forked DataLoader workers).
+            image = self._cache_data[offset : offset + h * w].reshape(1, h, w).clone()
         else:
             image = self._load_image(index)
         # Apply the augmentation pipeline
@@ -582,10 +617,13 @@ class FinetuneData(Dataset):
     def cache_images(self, num_images_to_cache: int):
         """Preloads images into memory for faster training iteration.
 
-        Loads the first N images (in their raw, unaugmented form) into a cache
-        stored as a nested tensor. This significantly reduces I/O overhead during
-        training at the cost of memory usage. Augmentations are still applied
-        on-the-fly to cached images.
+        Loads the first N images (in their raw, unaugmented form) into a single
+        flat shared-memory tensor. An offsets tensor and shapes tensor allow
+        reconstructing individual images on access.
+
+        Using a single shared-memory tensor (instead of one per image) avoids
+        exhausting file descriptor limits and prevents copy-on-write duplication
+        when DataLoader workers are forked.
 
         Args:
             num_images_to_cache: The maximum number of images to cache. If this
@@ -601,15 +639,33 @@ class FinetuneData(Dataset):
             Must be called after split_data_random(), not before. The cache must
             be empty before splitting the dataset.
         """
-        self.image_cache = []
         self.num_cached_images = min(num_images_to_cache, len(self))
-        # Cache the images
+        # First pass: record shapes to compute total size without
+        # keeping all image tensors in memory simultaneously.
+        shapes = []
+        total_pixels = 0
         for index in range(self.num_cached_images):
             image = self._load_image(index)
-            # Store the image
-            self.image_cache.append(image)
-        # Convert the image cache to a tensor
-        self.image_cache = torch.nested.nested_tensor(self.image_cache)
+            h, w = image.shape[1], image.shape[2]
+            shapes.append((h, w))
+            total_pixels += h * w
+        # Allocate tensors in shared memory up front so the second pass
+        # Allocate the flat buffer and metadata tensors, then fill in
+        # a second pass so only one image is in memory at a time.
+        offsets = []
+        offset = 0
+        for h, w in shapes:
+            offsets.append(offset)
+            offset += h * w
+        self._cache_offsets = torch.tensor(offsets, dtype=torch.int64)
+        self._cache_shapes = torch.tensor(shapes, dtype=torch.int64)
+        self._cache_data = torch.empty(total_pixels, dtype=torch.uint8)
+        # Second pass: load images directly into the flat buffer.
+        for index in range(self.num_cached_images):
+            image = self._load_image(index)
+            o = self._cache_offsets[index].item()
+            h, w = shapes[index]
+            self._cache_data[o : o + h * w] = image.reshape(-1)
 
 
 class EvalData(Dataset):
