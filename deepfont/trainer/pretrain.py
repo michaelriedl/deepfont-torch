@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LRScheduler
 
 from deepfont.data.config import PretrainDataConfig
-from deepfont.data.datasets import PretrainData
+from deepfont.data.datasets import PretrainData, bcf_worker_init_fn
 from deepfont.models.config import DeepFontAEConfig
 from deepfont.models.deepfont import DeepFontAE
 
@@ -93,6 +93,7 @@ class PretrainTrainer(BaseTrainer):
             num_workers=self.config.num_workers,
             pin_memory=True,
             drop_last=True,
+            worker_init_fn=bcf_worker_init_fn,
         )
         val_loader = DataLoader(
             val_set,
@@ -100,6 +101,7 @@ class PretrainTrainer(BaseTrainer):
             shuffle=False,
             num_workers=self.config.num_workers,
             pin_memory=True,
+            worker_init_fn=bcf_worker_init_fn,
         )
         return train_loader, val_loader
 

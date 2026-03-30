@@ -7,7 +7,7 @@ import torch
 
 # Increase the maximum text chunk size for PNG images
 from PIL import Image, ImageFile, PngImagePlugin
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, get_worker_info
 
 from .bcf import BCFStoreFile, read_label
 from .config import EvalDataConfig, FinetuneDataConfig, PretrainDataConfig
@@ -17,6 +17,25 @@ PngImagePlugin.MAX_TEXT_CHUNK = 1048576 * 10  # ty: ignore[invalid-assignment]
 
 # Load truncated images
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # ty: ignore[invalid-assignment]
+
+
+def bcf_worker_init_fn(worker_id: int) -> None:
+    """Reopen BCF file handles so each DataLoader worker has its own.
+
+    When PyTorch forks worker processes the parent's file descriptors are
+    shared, making the seek/read pair in BCFStoreFile.get() racy. Calling
+    reset_file_pointer() gives every worker an independent descriptor.
+
+    Args:
+        worker_id: Worker index supplied by the DataLoader (unused but
+            required by the worker_init_fn signature).
+    """
+    info = get_worker_info()
+    if info is None:
+        return
+    dataset = info.dataset
+    if hasattr(dataset, "bcf_store"):
+        dataset.bcf_store.reset_file_pointer()  # ty: ignore[unresolved-attribute]
 
 
 class PretrainData(Dataset):
