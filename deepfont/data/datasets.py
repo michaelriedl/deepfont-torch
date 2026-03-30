@@ -216,6 +216,9 @@ class PretrainData(Dataset):
         """
         # Check if the image is cached
         if self.num_cached_images > 0 and index < self.num_cached_images:
+            assert self._cache_offsets is not None
+            assert self._cache_shapes is not None
+            assert self._cache_data is not None
             offset = self._cache_offsets[index].item()
             h, w = self._cache_shapes[index]
             # clone() so the augmentation pipeline doesn't write back
@@ -545,6 +548,9 @@ class FinetuneData(Dataset):
         """
         # Check if the image is cached
         if self.num_cached_images > 0 and index < self.num_cached_images:
+            assert self._cache_offsets is not None
+            assert self._cache_shapes is not None
+            assert self._cache_data is not None
             offset = self._cache_offsets[index].item()
             h, w = self._cache_shapes[index]
             # clone() so the augmentation pipeline doesn't write back
