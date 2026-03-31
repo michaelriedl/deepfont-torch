@@ -5,7 +5,7 @@
 
 reconstruction_visualizer:
   _target_: deepfont.callbacks.ReconstructionVisualizerCallback
-  save_every_n_epochs: 5
+  save_every_n_epochs: 1
   num_samples: 8
   output_dir: reconstructions
   # Set value_range to match image_normalization in PretrainConfig:

@@ -6,7 +6,7 @@ defaults:
   - _self_
   - data: pretrain
   - model: deepfont_ae
-  - callbacks: default
+  - callbacks: pretrain
   - logger: null # set logger here or use command line (e.g. `python pretrain.py logger=tensorboard`)
   - trainer: pretrain
   - paths: default
