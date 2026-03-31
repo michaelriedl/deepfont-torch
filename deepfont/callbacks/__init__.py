@@ -23,6 +23,7 @@ Hydra integration:
 
 from .lr_monitor import LearningRateMonitorCallback, LearningRateMonitorCallbackConfig
 from .gradient_norm import GradientNormMonitorCallback, GradientNormMonitorCallbackConfig
+from .model_summary import ModelSummaryCallback, ModelSummaryCallbackConfig
 from .early_stopping import EarlyStoppingCallback, EarlyStoppingCallbackConfig
 from .model_checkpoint import ModelCheckpointCallback, ModelCheckpointCallbackConfig
 from .reconstruction_visualizer import (
@@ -39,6 +40,8 @@ __all__ = [
     "LearningRateMonitorCallbackConfig",
     "ModelCheckpointCallback",
     "ModelCheckpointCallbackConfig",
+    "ModelSummaryCallback",
+    "ModelSummaryCallbackConfig",
     "ReconstructionVisualizerCallback",
     "ReconstructionVisualizerCallbackConfig",
 ]

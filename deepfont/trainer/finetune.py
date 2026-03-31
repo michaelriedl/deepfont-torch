@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LRScheduler
 
 from deepfont.data.config import EvalDataConfig, FinetuneDataConfig
-from deepfont.data.datasets import EvalData, FinetuneData
+from deepfont.data.datasets import EvalData, FinetuneData, bcf_worker_init_fn
 from deepfont.models.config import DeepFontConfig
 from deepfont.models.deepfont import DeepFont
 
@@ -108,6 +108,7 @@ class FinetuneTrainer(BaseTrainer):
             num_workers=self.config.num_workers,
             pin_memory=True,
             drop_last=True,
+            worker_init_fn=bcf_worker_init_fn,
         )
         val_loader = DataLoader(
             val_set,
@@ -115,6 +116,7 @@ class FinetuneTrainer(BaseTrainer):
             shuffle=False,
             num_workers=self.config.num_workers,
             pin_memory=True,
+            worker_init_fn=bcf_worker_init_fn,
         )
         return train_loader, val_loader
 
@@ -241,6 +243,7 @@ class FinetuneTrainer(BaseTrainer):
             shuffle=False,
             num_workers=self.config.num_workers,
             pin_memory=True,
+            worker_init_fn=bcf_worker_init_fn,
         )
         eval_loader = self.fabric.setup_dataloaders(eval_loader)
 

@@ -3,6 +3,8 @@
 # Override hardware settings via CLI, e.g.:
 #   python finetune.py trainer.accelerator=gpu trainer.devices=4 trainer.strategy=ddp
 
+_target_: deepfont.trainer.config.FinetuneConfig
+
 # Hardware / Fabric
 accelerator: "auto"
 devices: "auto"
@@ -17,12 +19,14 @@ val_batch_size: 64
 train_ratio: 0.8
 grad_accum_steps: 1
 gradient_clip_val: null
+limit_train_batches: null  # cap training batches per epoch; null = use all
+limit_val_batches: null  # cap validation batches per epoch; null = use all
 
 # Validation
 val_frequency: 1
 
 # Checkpointing
-checkpoint_dir: "./checkpoints"
+checkpoint_dir: "${paths.output_dir}/checkpoints"
 checkpoint_frequency: 1
 
 # Logging

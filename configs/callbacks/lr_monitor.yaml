@@ -1,7 +1,7 @@
-# @package _global_
-# Learning-rate monitor callback — logs current LR(s) to the Fabric logger each epoch.
+# Learning-rate monitor callback -- logs current LR(s) to the Fabric logger each epoch.
 # All fields correspond to LearningRateMonitorCallback.__init__ parameters.
 # Instantiate with: hydra.utils.instantiate(cfg.callbacks.lr_monitor)
 
-_target_: deepfont.callbacks.LearningRateMonitorCallback
-log_momentum: false
+lr_monitor:
+  _target_: deepfont.callbacks.LearningRateMonitorCallback
+  log_momentum: false

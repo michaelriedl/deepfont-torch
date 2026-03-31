@@ -5,7 +5,7 @@
 # your experiment YAML or on the command line, e.g.:
 #   python train.py model.num_classes=100 model.dropout_rate=0.2
 
-_target_: deepfont.models.deepfont.DeepFont
+_target_: deepfont.models.config.DeepFontConfig
 
 # Input / output
 in_channels: 1
