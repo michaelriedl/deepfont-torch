@@ -75,26 +75,32 @@ class ReconstructionVisualizerCallback:
         self.output_dir = output_dir
         self.value_range = value_range
 
-        self._sample_inputs: torch.Tensor | None = None
+        self._fixed_samples: torch.Tensor | None = None
 
     def _is_save_epoch(self, trainer) -> bool:
         return trainer.current_epoch % self.save_every_n_epochs == 0
 
     def on_validation_batch_start(self, batch, batch_idx, trainer) -> None:
-        """Capture the first num_samples images from the first val batch."""
+        """Capture the first num_samples images once and reuse them every epoch.
+
+        The samples are frozen on the first qualifying epoch so that the
+        same inputs are visualized across epochs, making it easy to see
+        how reconstruction quality evolves over time.
+        """
         if batch_idx != 0 or not self._is_save_epoch(trainer):
             return
-        # batch is a plain image tensor (B, 1, H, W) for PretrainTrainer.
-        self._sample_inputs = batch[: self.num_samples].detach().cpu()
+        # Only capture once; reuse the same images for every subsequent epoch.
+        if self._fixed_samples is None:
+            # batch is a plain image tensor (B, 1, H, W) for PretrainTrainer.
+            self._fixed_samples = batch[: self.num_samples].detach().cpu()
 
     def on_validation_epoch_end(self, trainer, val_metrics) -> None:
-        """Run the captured inputs through the model and save the grid."""
-        if self._sample_inputs is None:
+        """Run the fixed sample inputs through the model and save the grid."""
+        if self._fixed_samples is None or not self._is_save_epoch(trainer):
             return
 
         # Only write files on rank 0.
         if not trainer.fabric.is_global_zero:
-            self._sample_inputs = None
             return
 
         try:
@@ -105,8 +111,7 @@ class ReconstructionVisualizerCallback:
                 "Install it with: pip install torchvision"
             ) from exc
 
-        inputs = self._sample_inputs  # (N, 1, H, W) on CPU
-        self._sample_inputs = None  # clear before any early return
+        inputs = self._fixed_samples  # (N, 1, H, W) on CPU
 
         device = trainer.fabric.device
         with torch.no_grad():

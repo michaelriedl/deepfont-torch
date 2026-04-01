@@ -817,9 +817,9 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
 
     # construction
 
-    def test_initial_sample_inputs_is_none(self):
+    def test_initial_fixed_samples_is_none(self):
         cb = self.CB()
-        self.assertIsNone(cb._sample_inputs)
+        self.assertIsNone(cb._fixed_samples)
 
     # _is_save_epoch
 
@@ -842,48 +842,48 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
         cb = self.CB(save_every_n_epochs=1, num_samples=4)
         trainer = self._make_rkv_trainer(current_epoch=0)
         cb.on_validation_batch_start(self._batch(), batch_idx=1, trainer=trainer)
-        self.assertIsNone(cb._sample_inputs)
+        self.assertIsNone(cb._fixed_samples)
 
     def test_skips_non_save_epoch(self):
         cb = self.CB(save_every_n_epochs=5, num_samples=4)
         trainer = self._make_rkv_trainer(current_epoch=1)  # 1 % 5 ≠ 0
         cb.on_validation_batch_start(self._batch(), batch_idx=0, trainer=trainer)
-        self.assertIsNone(cb._sample_inputs)
+        self.assertIsNone(cb._fixed_samples)
 
     def test_captures_first_batch_on_save_epoch(self):
         cb = self.CB(save_every_n_epochs=1, num_samples=4)
         trainer = self._make_rkv_trainer(current_epoch=0)
         cb.on_validation_batch_start(self._batch(b=8), batch_idx=0, trainer=trainer)
-        self.assertIsNotNone(cb._sample_inputs)
-        self.assertEqual(cb._sample_inputs.shape, (4, 1, 105, 105))
+        self.assertIsNotNone(cb._fixed_samples)
+        self.assertEqual(cb._fixed_samples.shape, (4, 1, 105, 105))
 
     def test_captures_correct_number_of_samples(self):
         cb = self.CB(save_every_n_epochs=1, num_samples=2)
         trainer = self._make_rkv_trainer(current_epoch=0)
         cb.on_validation_batch_start(self._batch(b=10), batch_idx=0, trainer=trainer)
-        self.assertEqual(cb._sample_inputs.shape[0], 2)
+        self.assertEqual(cb._fixed_samples.shape[0], 2)
 
     def test_captures_all_when_batch_smaller_than_num_samples(self):
         cb = self.CB(save_every_n_epochs=1, num_samples=16)
         trainer = self._make_rkv_trainer(current_epoch=0)
         cb.on_validation_batch_start(self._batch(b=4), batch_idx=0, trainer=trainer)
-        self.assertEqual(cb._sample_inputs.shape[0], 4)
+        self.assertEqual(cb._fixed_samples.shape[0], 4)
 
     # on_validation_epoch_end
 
     def test_skips_when_no_samples_captured(self):
         cb = self.CB(save_every_n_epochs=1, output_dir=self.output_dir)
         trainer = self._make_rkv_trainer()
-        cb._sample_inputs = None
+        cb._fixed_samples = None
         cb.on_validation_epoch_end(trainer, {})
         self.assertEqual(len(os.listdir(self.output_dir)), 0)
 
     def test_skips_file_write_when_not_global_zero(self):
         cb = self.CB(save_every_n_epochs=1, output_dir=self.output_dir)
-        trainer = self._make_rkv_trainer(is_global_zero=False)
-        cb._sample_inputs = self._batch(b=4)
+        trainer = self._make_rkv_trainer(current_epoch=0, is_global_zero=False)
+        cb._fixed_samples = self._batch(b=4)
         cb.on_validation_epoch_end(trainer, {})
-        self.assertIsNone(cb._sample_inputs)
+        self.assertIsNotNone(cb._fixed_samples)  # samples are kept, just not written
         self.assertEqual(len(os.listdir(self.output_dir)), 0)
 
     def test_saves_png_file(self):
@@ -902,12 +902,12 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
         cb.on_validation_epoch_end(trainer, {})
         self.assertIn("epoch-0007.png", os.listdir(self.output_dir))
 
-    def test_sample_inputs_cleared_after_epoch_end(self):
+    def test_fixed_samples_kept_after_epoch_end(self):
         cb = self.CB(save_every_n_epochs=1, num_samples=4, output_dir=self.output_dir)
         trainer = self._make_rkv_trainer(current_epoch=0)
         cb.on_validation_batch_start(self._batch(b=4), batch_idx=0, trainer=trainer)
         cb.on_validation_epoch_end(trainer, {})
-        self.assertIsNone(cb._sample_inputs)
+        self.assertIsNotNone(cb._fixed_samples)  # kept for reuse
 
     def test_value_range_clamping_produces_file(self):
         """Out-of-range values should be clamped without error."""
@@ -925,9 +925,16 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
 
     def test_no_file_produced_on_non_save_epoch(self):
         cb = self.CB(save_every_n_epochs=5, num_samples=4, output_dir=self.output_dir)
-        trainer = self._make_rkv_trainer(current_epoch=1)  # not a save epoch
-        cb.on_validation_batch_start(self._batch(b=4), batch_idx=0, trainer=trainer)
-        cb.on_validation_epoch_end(trainer, {})
+        # First capture samples on epoch 0 (a save epoch)
+        trainer_e0 = self._make_rkv_trainer(current_epoch=0)
+        cb.on_validation_batch_start(self._batch(b=4), batch_idx=0, trainer=trainer_e0)
+        cb.on_validation_epoch_end(trainer_e0, {})
+        # epoch-0000.png written; clear it for the real check
+        for f in os.listdir(self.output_dir):
+            os.remove(os.path.join(self.output_dir, f))
+        # Now test that epoch 1 (not a save epoch) produces no file
+        trainer_e1 = self._make_rkv_trainer(current_epoch=1)  # 1 % 5 != 0
+        cb.on_validation_epoch_end(trainer_e1, {})
         self.assertEqual(len(os.listdir(self.output_dir)), 0)
 
 
