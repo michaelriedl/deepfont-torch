@@ -317,7 +317,7 @@ class BaseTrainer(ABC):
                 )
 
                 for k, v in outputs.items():
-                    accumulated.setdefault(k, []).append(v.detach())
+                    accumulated.setdefault(k, []).append(v.detach().cpu())
 
                 self._progbar_postfix(iterable, outputs, prefix="val")
 
