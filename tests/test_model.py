@@ -15,11 +15,11 @@ Test classes:
 """
 
 import torch
-import torch.nn as nn
 import pytest
+import torch.nn as nn
 
-from deepfont.models.config import DeepFontAEConfig, DeepFontConfig
-from deepfont.models.deepfont import DeepFontAE, DeepFont
+from deepfont.models.config import DeepFontConfig, DeepFontAEConfig
+from deepfont.models.deepfont import DeepFont, DeepFontAE
 
 # Module-level constants
 
@@ -36,7 +36,7 @@ def _small_ae_config(**overrides) -> DeepFontAEConfig:
     defaults = dict(
         in_channels=1,
         encoder_channels=(64, 128),
-        encoder_kernel_sizes=(11, 5),
+        encoder_kernel_sizes=(10, 5),
         encoder_strides=(2, 1),
         encoder_paddings=(0, 2),
         pool_kernel_size=2,

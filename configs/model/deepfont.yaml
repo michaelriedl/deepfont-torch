@@ -14,7 +14,7 @@ num_classes: 2383
 
 # Encoder architecture
 encoder_channels: [64, 128]
-encoder_kernel_sizes: [11, 5]
+encoder_kernel_sizes: [10, 5]
 encoder_strides: [2, 1]
 encoder_paddings: [0, 2]
 pool_kernel_size: 2

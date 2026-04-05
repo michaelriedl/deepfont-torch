@@ -54,6 +54,7 @@ def _build_decoder(
     encoder_paddings: tuple[int, ...],
     pool_kernel_size: int,
     output_activation: str | None,
+    input_size: int = 105,
 ) -> nn.Sequential:
     """Build a decoder that mirrors the encoder structure.
 
@@ -64,7 +65,10 @@ def _build_decoder(
     The ConvTranspose2d at each stage uses the same kernel size, stride,
     and padding as its corresponding encoder Conv2d, which ensures the
     transpose convolution inverts the spatial transform of the forward
-    convolution.
+    convolution.  When a Conv2d stride > 1 causes a floor-division
+    ambiguity, the appropriate output_padding is computed automatically
+    from input_size so the decoder reconstructs the exact original
+    spatial dimensions.
 
     Args:
         out_channels: Number of channels the decoder should produce (typically
@@ -75,6 +79,8 @@ def _build_decoder(
         encoder_paddings: Paddings from the encoder (in encoder order).
         pool_kernel_size: Pool kernel size used in the encoder.
         output_activation: Optional final activation ("sigmoid" or "relu").
+        input_size: Spatial size of the square input image, used to compute
+            output_padding for ConvTranspose2d layers.
 
     Returns:
         An nn.Sequential module implementing the decoder.
@@ -86,6 +92,15 @@ def _build_decoder(
     reversed_strides = list(reversed(encoder_strides))
     reversed_paddings = list(reversed(encoder_paddings))
 
+    # Walk through the encoder to record spatial sizes before each conv.
+    # These are needed to compute output_padding for ConvTranspose2d.
+    pre_conv_sizes: list[int] = []
+    spatial = input_size
+    for k, s, p in zip(encoder_kernel_sizes, encoder_strides, encoder_paddings, strict=True):
+        pre_conv_sizes.append(spatial)
+        spatial = (spatial - k + 2 * p) // s + 1  # after conv
+        spatial = spatial // pool_kernel_size  # after pool
+
     for i in range(n_stages):
         in_ch = reversed_channels[i]
         # Output channel: next reversed channel, or out_channels for the last stage
@@ -94,10 +109,19 @@ def _build_decoder(
         s = reversed_strides[i]
         p = reversed_paddings[i]
 
+        # Compute output_padding to resolve the ConvTranspose2d size ambiguity
+        # that arises when the corresponding encoder Conv2d had stride > 1.
+        encoder_stage_idx = n_stages - 1 - i
+        op = (pre_conv_sizes[encoder_stage_idx] - k + 2 * p) % s
+
         # Upsample to undo the MaxPool2d
         layers.append(nn.Upsample(scale_factor=pool_kernel_size))
         # ConvTranspose2d to undo the Conv2d
-        layers.append(nn.ConvTranspose2d(in_ch, target_ch, kernel_size=k, stride=s, padding=p))
+        layers.append(
+            nn.ConvTranspose2d(
+                in_ch, target_ch, kernel_size=k, stride=s, padding=p, output_padding=op
+            )
+        )
 
         # Add activation (ReLU for intermediate layers, optional for last)
         is_last = i == n_stages - 1
@@ -187,6 +211,7 @@ class DeepFontAE(nn.Module):
             encoder_paddings=config.encoder_paddings,
             pool_kernel_size=config.pool_kernel_size,
             output_activation=config.output_activation,
+            input_size=config.input_size,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

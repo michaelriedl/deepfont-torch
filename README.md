@@ -63,7 +63,7 @@ The autoencoder is used for unsupervised pretraining on unlabeled font images. I
 **Architecture:**
 - **Input:** (1, 105, 105) grayscale images
 - **Encoder:**
-  - Conv2d(64 filters, 11×11 kernel, stride=2) → (64, 48, 48)
+  - Conv2d(64 filters, 10×10 kernel, stride=2) → (64, 48, 48)
   - MaxPool2d(2×2) → (64, 24, 24)
   - ReLU activation
   - Conv2d(128 filters, 5×5 kernel) → (128, 24, 24)
@@ -74,7 +74,7 @@ The autoencoder is used for unsupervised pretraining on unlabeled font images. I
   - ConvTranspose2d(64 filters, 5×5 kernel, stride=2) → (64, 24, 24)
   - ReLU activation
   - Upsample(scale=2) → (64, 48, 48)
-  - ConvTranspose2d(1 filter, 11×11 kernel, stride=2) → (1, 105, 105)
+  - ConvTranspose2d(1 filter, 10×10 kernel, stride=2) → (1, 105, 105)
   - Sigmoid activation (optional)
 - **Output:** (1, 105, 105) reconstructed image
 
@@ -89,7 +89,7 @@ The full classification model extends the encoder with additional convolutional 
 **Architecture:**
 - **Input:** (1, 105, 105) grayscale images
 - **Stage 1 - Encoder (Feature Extraction):**
-  - Conv2d(64 filters, 11×11 kernel, stride=2) + BatchNorm2d → (64, 48, 48)
+  - Conv2d(64 filters, 10×10 kernel, stride=2) + BatchNorm2d → (64, 48, 48)
   - MaxPool2d(2×2) → (64, 24, 24)
   - ReLU activation
   - Conv2d(128 filters, 5×5 kernel) + BatchNorm2d → (128, 24, 24)

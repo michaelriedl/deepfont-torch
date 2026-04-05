@@ -15,8 +15,7 @@ Test classes:
 import pytest
 from pydantic import ValidationError
 
-from deepfont.models.config import DeepFontAEConfig, DeepFontConfig
-
+from deepfont.models.config import DeepFontConfig, DeepFontAEConfig
 
 # Shared helpers
 
@@ -47,8 +46,8 @@ class TestDeepFontAEConfigDefaults:
         assert DeepFontAEConfig().encoder_channels == (64, 128)
 
     def test_encoder_kernel_sizes_default(self):
-        """Default encoder kernel sizes match the paper (11, 5)."""
-        assert DeepFontAEConfig().encoder_kernel_sizes == (11, 5)
+        """Default encoder kernel sizes match the paper (10, 5)."""
+        assert DeepFontAEConfig().encoder_kernel_sizes == (10, 5)
 
     def test_encoder_strides_default(self):
         """Default encoder strides match the paper (2, 1)."""
@@ -225,8 +224,8 @@ class TestDeepFontConfigDefaults:
         assert DeepFontConfig().encoder_channels == (64, 128)
 
     def test_encoder_kernel_sizes_default(self):
-        """Default encoder kernel sizes match the paper (11, 5)."""
-        assert DeepFontConfig().encoder_kernel_sizes == (11, 5)
+        """Default encoder kernel sizes match the paper (10, 5)."""
+        assert DeepFontConfig().encoder_kernel_sizes == (10, 5)
 
     def test_encoder_strides_default(self):
         """Default encoder strides match the paper (2, 1)."""

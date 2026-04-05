@@ -14,7 +14,7 @@ Architecture summary (paper defaults):
 - Input: 1-channel (grayscale) 105x105 patches.
 - Encoder (shared by both models): two convolutional stages, each consisting
   of Conv2d -> [BatchNorm2d] -> MaxPool2d -> ReLU.  Stage 1 uses 64 filters
-  with an 11x11 kernel at stride 2 (AlexNet-style); stage 2 uses 128 filters
+  with a 10x10 kernel at stride 2; stage 2 uses 128 filters
   with a 5x5 kernel at stride 1 with padding 2.
 - Decoder (autoencoder only): mirrors the encoder using
   Upsample -> ConvTranspose2d -> ReLU in reverse order.
@@ -65,6 +65,14 @@ class DeepFontAEConfig(BaseModel):
             "Number of input image channels.  Use 1 for grayscale (paper default) or 3 for RGB."
         ),
     )
+    input_size: int = Field(
+        default=105,
+        ge=1,
+        description=(
+            "Spatial size (height = width) of the square input image.  Used to "
+            "compute output_padding for ConvTranspose2d in the decoder."
+        ),
+    )
 
     # Encoder architecture
     encoder_channels: tuple[int, ...] = Field(
@@ -76,7 +84,7 @@ class DeepFontAEConfig(BaseModel):
         ),
     )
     encoder_kernel_sizes: tuple[int, ...] = Field(
-        default=(11, 5),
+        default=(10, 5),
         min_length=1,
         description="Kernel size for each encoder convolutional stage.",
     )
@@ -217,7 +225,7 @@ class DeepFontConfig(BaseModel):
         description="Output channel count for each encoder convolutional stage.",
     )
     encoder_kernel_sizes: tuple[int, ...] = Field(
-        default=(11, 5),
+        default=(10, 5),
         min_length=1,
         description="Kernel size for each encoder Conv2d.",
     )
