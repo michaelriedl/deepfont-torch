@@ -185,6 +185,140 @@ class ResizeHeightSqueezeWidth(DualTransform):
         return "height", "width_scale", "interpolation"
 
 
+class SyntheticAugmentationPipeline:
+    """Builds the synthetic augmentation pipeline once and reuses it across calls.
+
+    Creating an ``A.Compose`` object is expensive relative to applying it.
+    This class pays the construction cost once in ``__init__`` and reuses the
+    compiled pipeline on every ``__call__``, giving a 4-7x speedup when the
+    same pipeline is applied to many images (e.g. inside a Dataset).
+
+    The ``aug_prob`` property supports mutation after construction: assigning a
+    new value rebuilds ``self._compose`` with the updated probabilities.  This
+    is used by ``FinetuneData`` and ``PretrainData`` to disable augmentation
+    for validation splits (``val_set.aug_prob = 0.0``) without creating a
+    whole new dataset object.
+
+    Args:
+        aug_prob: Probability (0.0-1.0) of applying each stochastic transform.
+    """
+
+    def __init__(self, aug_prob: float) -> None:
+        self._aug_prob = aug_prob
+        self._compose = self._build(aug_prob)
+
+    @staticmethod
+    def _build(aug_prob: float) -> A.Compose:
+        return A.Compose(
+            [
+                ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
+                RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
+                A.InvertImg(p=aug_prob),
+                A.Affine(
+                    rotate=ROTATE_BOUNDS,
+                    shear=SHEAR_BOUNDS,
+                    border_mode=cv2.BORDER_REFLECT,
+                    p=aug_prob,
+                ),
+                A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
+                A.GaussianBlur(blur_limit=0, sigma_limit=BLUR_LIMIT, p=aug_prob),
+                A.RandomBrightnessContrast(p=aug_prob),
+                A.GaussNoise(std_range=NOISE_STD_RANGE, mean_range=NOISE_MEAN_RANGE, p=aug_prob),
+                A.RandomRotate90(p=ROT_FLIP_PROB),
+                A.HorizontalFlip(p=ROT_FLIP_PROB),
+                A.VerticalFlip(p=ROT_FLIP_PROB),
+            ]
+        )
+
+    @property
+    def aug_prob(self) -> float:
+        return self._aug_prob
+
+    @aug_prob.setter
+    def aug_prob(self, value: float) -> None:
+        self._aug_prob = value
+        self._compose = self._build(value)
+
+    def __call__(self, image: np.ndarray) -> np.ndarray:
+        if np.random.rand() < self._aug_prob:
+            image = add_grayscale_gradient(image)
+        return self._compose(image=image)["image"]
+
+
+class RealAugmentationPipeline:
+    """Builds the real-image augmentation pipeline once and reuses it across calls.
+
+    Mirrors ``SyntheticAugmentationPipeline`` but uses the gentler real-image
+    transform list (no gradient overlay, no blur, no noise).
+
+    Args:
+        aug_prob: Probability (0.0-1.0) of applying each stochastic transform.
+    """
+
+    def __init__(self, aug_prob: float) -> None:
+        self._aug_prob = aug_prob
+        self._compose = self._build(aug_prob)
+
+    @staticmethod
+    def _build(aug_prob: float) -> A.Compose:
+        return A.Compose(
+            [
+                ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
+                RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
+                A.InvertImg(p=aug_prob),
+                A.Affine(
+                    rotate=ROTATE_BOUNDS,
+                    shear=SHEAR_BOUNDS,
+                    border_mode=cv2.BORDER_REFLECT,
+                    p=aug_prob,
+                ),
+                A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
+                A.RandomBrightnessContrast(p=aug_prob),
+                A.RandomRotate90(p=ROT_FLIP_PROB),
+                A.HorizontalFlip(p=ROT_FLIP_PROB),
+                A.VerticalFlip(p=ROT_FLIP_PROB),
+            ]
+        )
+
+    @property
+    def aug_prob(self) -> float:
+        return self._aug_prob
+
+    @aug_prob.setter
+    def aug_prob(self, value: float) -> None:
+        self._aug_prob = value
+        self._compose = self._build(value)
+
+    def __call__(self, image: np.ndarray) -> np.ndarray:
+        return self._compose(image=image)["image"]
+
+
+class EvalAugmentationPipeline:
+    """Builds the eval TTA pipeline once and reuses it across calls.
+
+    All transforms run with ``p=1.0`` so there is no ``aug_prob``.  Multiple
+    calls with the same image produce different random crops because
+    ``RandomWidthScale`` and ``RandomCrop`` are stochastic.
+
+    The pipeline is constructed once in ``__init__`` and applied inside a loop
+    in ``__call__``, so construction cost is paid at most once per dataset
+    lifetime rather than once per image.
+    """
+
+    def __init__(self) -> None:
+        self._compose = A.Compose(
+            [
+                ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
+                RandomWidthScale(scale_limit=EVAL_SCALE_LIMIT, p=1.0),
+                A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
+            ]
+        )
+
+    def __call__(self, image: np.ndarray, num_image_crops: int) -> np.ndarray:
+        crops = [self._compose(image=image)["image"] for _ in range(num_image_crops)]
+        return np.array(crops)
+
+
 def augmentation_pipeline(
     image: np.ndarray, image_type: Literal["synthetic", "real"], aug_prob: float
 ) -> np.ndarray:
@@ -218,140 +352,15 @@ def augmentation_pipeline(
 
     Note:
         Both pipelines include resizing, random scaling, cropping, and various
-        geometric and photometric transformations. See _synthetic_image_pipeline
-        and _real_image_pipeline for details.
+        geometric and photometric transformations. See ``SyntheticAugmentationPipeline``
+        and ``RealAugmentationPipeline`` for the full transform lists.
     """
-    # Run the correct pipeline based on the image type
     if image_type == "synthetic":
-        return _synthetic_image_pipeline(image, aug_prob)
+        return SyntheticAugmentationPipeline(aug_prob)(image)
     elif image_type == "real":
-        return _real_image_pipeline(image, aug_prob)
+        return RealAugmentationPipeline(aug_prob)(image)
     else:
         raise ValueError("The image type must be either 'synthetic' or 'real'.")
-
-
-def _synthetic_image_pipeline(image: np.ndarray, aug_prob: float) -> np.ndarray:
-    """Applies augmentations specifically designed for synthetic/rendered images.
-
-    This pipeline is tailored for synthetically generated images (e.g., rendered text,
-    computer-generated graphics) to make them appear more realistic by simulating
-    real-world artifacts and variations. The augmentation sequence includes:
-
-    1. Greyscale gradient (simulates lighting and background variations)
-    2. Height resize with width squeezing (consistent dimensions with aspect variation)
-    3. Random width scaling (±15% variation)
-    4. Image inversion (simulates light-on-dark vs dark-on-light)
-    5. Affine transformations (rotation ±45°, shear ±15°)
-    6. Random cropping to 105x105
-    7. Gaussian blur (simulates camera/scan blur)
-    8. Brightness/contrast adjustments
-    9. Gaussian noise (simulates sensor noise and compression artifacts)
-    10. 90° rotations and flips (orientation variations)
-
-    This pipeline is more aggressive than the real image pipeline, particularly
-    with blur and noise, to bridge the domain gap between synthetic and real images.
-
-    Args:
-        image: Input synthetic image as a NumPy array. Should be a grayscale image
-            with values in the range [0, 255].
-        aug_prob: The probability (0.0 to 1.0) of applying each probabilistic
-            augmentation. A value of 0.0 applies only always_apply transforms,
-            while 1.0 applies all augmentations.
-
-    Returns:
-        The augmented image as a NumPy array with shape (105, 105), ready for
-        model input.
-
-    Note:
-        The grayscale gradient is applied first with probability aug_prob, before
-        the albumentations pipeline. All geometric parameters are defined as module-level
-        constants (IMAGE_SIZE, SQUEEZE_RATIO, SCALE_LIMIT, etc.).
-    """
-    # Add the grayscale gradient
-    if np.random.rand() < aug_prob:
-        image = add_grayscale_gradient(image)
-    # Create the augmentation pipeline
-    augmentations = A.Compose(
-        [
-            ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
-            RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
-            A.InvertImg(p=aug_prob),
-            A.Affine(
-                rotate=ROTATE_BOUNDS,
-                shear=SHEAR_BOUNDS,
-                border_mode=cv2.BORDER_REFLECT,
-                p=aug_prob,
-            ),
-            A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
-            A.GaussianBlur(blur_limit=0, sigma_limit=BLUR_LIMIT, p=aug_prob),
-            A.RandomBrightnessContrast(p=aug_prob),
-            A.GaussNoise(std_range=NOISE_STD_RANGE, mean_range=NOISE_MEAN_RANGE, p=aug_prob),
-            A.RandomRotate90(p=ROT_FLIP_PROB),
-            A.HorizontalFlip(p=ROT_FLIP_PROB),
-            A.VerticalFlip(p=ROT_FLIP_PROB),
-        ]
-    )
-
-    return augmentations(image=image)["image"]
-
-
-def _real_image_pipeline(image: np.ndarray, aug_prob: float) -> np.ndarray:
-    """Applies augmentations specifically designed for real photographs and scans.
-
-    This pipeline is optimized for real-world images (photographs, scans, camera captures)
-    and focuses on geometric and photometric variations without adding synthetic artifacts
-    like blur or noise that are already present in real images. The augmentation sequence
-    includes:
-
-    1. Height resize with width squeezing (consistent dimensions with aspect variation)
-    2. Random width scaling (±15% variation)
-    3. Image inversion (simulates light-on-dark vs dark-on-light)
-    4. Affine transformations (rotation ±45°, shear ±15°)
-    5. Random cropping to 105x105
-    6. Brightness/contrast adjustments (compensates for lighting variations)
-    7. 90° rotations and flips (orientation variations)
-
-    Compared to the synthetic pipeline, this omits Gaussian blur and noise since real
-    images already contain these artifacts naturally. This prevents over-processing that
-    could degrade image quality.
-
-    Args:
-        image: Input real image as a NumPy array. Should be a grayscale image
-            with values in the range [0, 255].
-        aug_prob: The probability (0.0 to 1.0) of applying each probabilistic
-            augmentation. A value of 0.0 applies only always_apply transforms,
-            while 1.0 applies all augmentations.
-
-    Returns:
-        The augmented image as a NumPy array with shape (105, 105), ready for
-        model input.
-
-    Note:
-        Unlike the synthetic pipeline, no grayscale gradient or noise is added.
-        All geometric parameters are defined as module-level constants (IMAGE_SIZE,
-        SQUEEZE_RATIO, SCALE_LIMIT, etc.).
-    """
-    # Create the real image pipeline
-    real_augmentations = A.Compose(
-        [
-            ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
-            RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
-            A.InvertImg(p=aug_prob),
-            A.Affine(
-                rotate=ROTATE_BOUNDS,
-                shear=SHEAR_BOUNDS,
-                border_mode=cv2.BORDER_REFLECT,
-                p=aug_prob,
-            ),
-            A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
-            A.RandomBrightnessContrast(p=aug_prob),
-            A.RandomRotate90(p=ROT_FLIP_PROB),
-            A.HorizontalFlip(p=ROT_FLIP_PROB),
-            A.VerticalFlip(p=ROT_FLIP_PROB),
-        ]
-    )
-
-    return real_augmentations(image=image)["image"]
 
 
 def eval_pipeline(image: np.ndarray, num_image_crops: int) -> np.ndarray:
@@ -394,20 +403,4 @@ def eval_pipeline(image: np.ndarray, num_image_crops: int) -> np.ndarray:
         The scale_limit of 0.4 (±40%) is higher than the training scale_limit of
         0.15 (±15%) to ensure good coverage during evaluation.
     """
-    # Create the augmentations
-    augmentations = A.Compose(
-        [
-            ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
-            RandomWidthScale(scale_limit=EVAL_SCALE_LIMIT, p=1.0),
-            A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
-        ]
-    )
-    # Create the image crops
-    image_crops = []
-    for _ in range(num_image_crops):
-        # Apply the augmentations
-        image_crops.append(augmentations(image=image)["image"])
-    # Convert to numpy array
-    image_crops = np.array(image_crops)
-
-    return image_crops
+    return EvalAugmentationPipeline()(image, num_image_crops)

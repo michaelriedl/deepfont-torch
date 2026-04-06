@@ -11,7 +11,11 @@ from torch.utils.data import Dataset, get_worker_info
 
 from .bcf import BCFStoreFile, read_label
 from .config import EvalDataConfig, FinetuneDataConfig, PretrainDataConfig
-from .augmentations import eval_pipeline, augmentation_pipeline
+from .augmentations import (
+    EvalAugmentationPipeline,
+    RealAugmentationPipeline,
+    SyntheticAugmentationPipeline,
+)
 
 PngImagePlugin.MAX_TEXT_CHUNK = 1048576 * 10  # ty: ignore[invalid-assignment]
 
@@ -92,7 +96,9 @@ class PretrainData(Dataset):
         self.config = config
         self.synthetic_bcf_file = config.synthetic_bcf_file
         self.real_image_dir = config.real_image_dir
-        self.aug_prob = config.aug_prob
+        self._aug_prob = config.aug_prob
+        self._synthetic_pipeline = SyntheticAugmentationPipeline(self._aug_prob)
+        self._real_pipeline = RealAugmentationPipeline(self._aug_prob)
         self.image_normalization = config.image_normalization
         # Load the BCF store file
         self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
@@ -107,6 +113,16 @@ class PretrainData(Dataset):
         self._cache_offsets: torch.Tensor | None = None
         self._cache_shapes: torch.Tensor | None = None
         self.num_cached_images = 0
+
+    @property
+    def aug_prob(self) -> float:
+        return self._aug_prob
+
+    @aug_prob.setter
+    def aug_prob(self, value: float) -> None:
+        self._aug_prob = value
+        self._synthetic_pipeline.aug_prob = value
+        self._real_pipeline.aug_prob = value
 
     def __len__(self) -> int:
         """Returns the total number of images in the dataset.
@@ -229,11 +245,10 @@ class PretrainData(Dataset):
             image = self._load_image(index)
         # Apply the augmentation pipeline
         image = image.numpy()
-        image = augmentation_pipeline(
-            image[0],
-            "synthetic" if index < self.num_syn_images else "real",
-            self.aug_prob,
-        )
+        if index < self.num_syn_images:
+            image = self._synthetic_pipeline(image[0])
+        else:
+            image = self._real_pipeline(image[0])
         image = torch.from_numpy(image).float().unsqueeze(0)
 
         return image
@@ -450,7 +465,8 @@ class FinetuneData(Dataset):
         self.config = config
         self.synthetic_bcf_file = config.synthetic_bcf_file
         self.label_file = config.label_file
-        self.aug_prob = config.aug_prob
+        self._aug_prob = config.aug_prob
+        self._synthetic_pipeline = SyntheticAugmentationPipeline(self._aug_prob)
         self.image_normalization = config.image_normalization
         # Load the BCF store file
         self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
@@ -468,6 +484,15 @@ class FinetuneData(Dataset):
         self._cache_offsets: torch.Tensor | None = None
         self._cache_shapes: torch.Tensor | None = None
         self.num_cached_images = 0
+
+    @property
+    def aug_prob(self) -> float:
+        return self._aug_prob
+
+    @aug_prob.setter
+    def aug_prob(self, value: float) -> None:
+        self._aug_prob = value
+        self._synthetic_pipeline.aug_prob = value
 
     def __len__(self) -> int:
         """Returns the total number of labeled images in the dataset.
@@ -561,7 +586,7 @@ class FinetuneData(Dataset):
             image = self._load_image(index)
         # Apply the augmentation pipeline
         image = image.numpy()
-        image = augmentation_pipeline(image[0], "synthetic", self.aug_prob)
+        image = self._synthetic_pipeline(image[0])
         image = torch.from_numpy(image).float().unsqueeze(0)
 
         return image
@@ -724,6 +749,7 @@ class EvalData(Dataset):
         self.label_file = config.label_file
         self.image_normalization = config.image_normalization
         self.num_image_crops = config.num_image_crops
+        self._eval_pipeline = EvalAugmentationPipeline()
         # Load the BCF store file
         self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
         # Load the labels
@@ -777,7 +803,7 @@ class EvalData(Dataset):
         # Convert the image to a numpy array
         image = np.array(image, dtype=np.uint8)
         # Apply the augmentations
-        image_crops = eval_pipeline(image, self.num_image_crops)
+        image_crops = self._eval_pipeline(image, self.num_image_crops)
         # Convert the image to a tensor
         image = torch.tensor(image_crops).float().unsqueeze(1)
         # Normalize the image
