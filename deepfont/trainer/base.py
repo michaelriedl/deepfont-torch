@@ -257,7 +257,6 @@ class BaseTrainer(ABC):
                 if self.global_step % self.config.log_every_n_steps == 0:
                     log_dict = {f"train_{k}": v.item() for k, v in outputs.items()}
                     log_dict["epoch"] = float(self.current_epoch)
-                    log_dict["lr"] = optimizer.param_groups[0]["lr"]
                     self.fabric.log_dict(log_dict, step=self.global_step)
 
             self.fabric.call(
