@@ -4,7 +4,6 @@ Verifies that cached images match their uncached counterparts, ensuring
 the flat shared-memory packing/unpacking preserves image data exactly.
 """
 
-import os
 import struct
 
 import numpy as np
@@ -227,8 +226,9 @@ class TestPretrainCacheImmutability:
 
     The augmentation pipeline currently happens to allocate new arrays
     internally, so checking cache contents after __getitem__ would pass
-    even without the clone().  Instead, we monkeypatch the augmentation
-    function to write into its input and verify the cache is still intact.
+    even without the clone().  Instead, we replace the dataset's persistent
+    pipeline instance with a callable that writes into its input and verify
+    the cache is still intact.
     """
 
     def test_inplace_augmentation_does_not_corrupt_cache(self, pretrain_dataset):
@@ -237,21 +237,27 @@ class TestPretrainCacheImmutability:
         ds.cache_images(len(ds))
         snapshot = ds._cache_data.clone()
 
-        # Monkeypatch augmentation_pipeline to zero out the input in-place
-        import deepfont.data.datasets as datasets_mod
+        # Replace the persistent pipeline instances with callables that zero
+        # the input array in-place before delegating to the real pipelines.
+        original_syn = ds._synthetic_pipeline
+        original_real = ds._real_pipeline
 
-        original_fn = datasets_mod.augmentation_pipeline
+        def destructive_syn(image: np.ndarray) -> np.ndarray:
+            image[:] = 0
+            return original_syn(image)
 
-        def destructive_pipeline(image, image_type, aug_prob):
-            image[:] = 0  # write in-place
-            return original_fn(image, image_type, aug_prob)
+        def destructive_real(image: np.ndarray) -> np.ndarray:
+            image[:] = 0
+            return original_real(image)
 
-        datasets_mod.augmentation_pipeline = destructive_pipeline
+        ds._synthetic_pipeline = destructive_syn
+        ds._real_pipeline = destructive_real
         try:
             for i in range(len(ds)):
                 _ = ds[i]
         finally:
-            datasets_mod.augmentation_pipeline = original_fn
+            ds._synthetic_pipeline = original_syn
+            ds._real_pipeline = original_real
 
         torch.testing.assert_close(ds._cache_data, snapshot)
 
@@ -277,20 +283,20 @@ class TestFinetuneCacheImmutability:
         ds.cache_images(len(ds))
         snapshot = ds._cache_data.clone()
 
-        import deepfont.data.datasets as datasets_mod
+        # Replace the persistent pipeline instance with a callable that zeros
+        # the input array in-place before delegating to the real pipeline.
+        original_syn = ds._synthetic_pipeline
 
-        original_fn = datasets_mod.augmentation_pipeline
-
-        def destructive_pipeline(image, image_type, aug_prob):
+        def destructive_syn(image: np.ndarray) -> np.ndarray:
             image[:] = 0
-            return original_fn(image, image_type, aug_prob)
+            return original_syn(image)
 
-        datasets_mod.augmentation_pipeline = destructive_pipeline
+        ds._synthetic_pipeline = destructive_syn
         try:
             for i in range(len(ds)):
                 _ = ds[i]
         finally:
-            datasets_mod.augmentation_pipeline = original_fn
+            ds._synthetic_pipeline = original_syn
 
         torch.testing.assert_close(ds._cache_data, snapshot)
 
