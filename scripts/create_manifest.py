@@ -27,9 +27,9 @@ Usage:
         --output data/manifests/real_only.parquet
 """
 
-import argparse
 import os
 import sys
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -62,7 +62,10 @@ def _build_synthetic_rows(
     #   header = 8 (count) + count*8 (size index) = (count+1)*8
     #   data offset[i] = header + sum(sizes[0..i-1])
     header_size = np.uint64((count + 1) * 8)
-    cumsum = np.concatenate([[np.uint64(0)], np.cumsum(sizes[:-1])]) if count > 0 else np.array([], dtype=np.uint64)
+    if count > 0:
+        cumsum = np.concatenate([[np.uint64(0)], np.cumsum(sizes[:-1])])
+    else:
+        cumsum = np.array([], dtype=np.uint64)
     abs_offsets = header_size + cumsum  # shape (count,)
 
     bcf_rel = _make_relative(bcf_file.resolve(), manifest_dir)

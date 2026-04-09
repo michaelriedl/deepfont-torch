@@ -4,8 +4,8 @@ from io import BytesIO
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
+import pandas as pd
 
 # Increase the maximum text chunk size for PNG images
 from PIL import Image, ImageFile, PngImagePlugin
@@ -221,9 +221,7 @@ class PretrainData(Dataset):
             ).convert("L")
         else:
             # Get the real image
-            image = Image.open(
-                self.real_image_path_list[index - self.num_syn_images]
-            ).convert("L")
+            image = Image.open(self.real_image_path_list[index - self.num_syn_images]).convert("L")
             # Check if any of the image dimensions are zero and resample if needed
             while 0 in image.size or 1 in image.size:
                 image = Image.open(
