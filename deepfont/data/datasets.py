@@ -1,8 +1,10 @@
 import os
 import copy
 from io import BytesIO
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 
 # Increase the maximum text chunk size for PNG images
@@ -100,14 +102,43 @@ class PretrainData(Dataset):
         self._synthetic_pipeline = SyntheticAugmentationPipeline(self._aug_prob)
         self._real_pipeline = RealAugmentationPipeline(self._aug_prob)
         self.image_normalization = config.image_normalization
-        # Load the BCF store file
-        self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
-        # Find the number of synthetic images
-        self.num_syn_images = self.bcf_store.size()
-        # Create the sythetic image index list
-        self.syn_image_index_list = np.arange(self.num_syn_images)
-        # Find the number of images and their names
-        self.num_real_images, self.real_image_name_list = self._find_images()
+
+        if config.manifest_file is not None:
+            manifest_dir = Path(config.manifest_file).resolve().parent
+            df = pd.read_parquet(config.manifest_file)
+            syn_df = df[df["image_type"] == "synthetic"]
+            real_df = df[df["image_type"] == "real"]
+            # Build BCF store if there are synthetic images
+            if len(syn_df) > 0:
+                bcf_path = str(manifest_dir / syn_df["bcf_file"].iloc[0])
+                if "bcf_offset" in syn_df.columns and not syn_df["bcf_offset"].isna().any():
+                    self.bcf_store = BCFStoreFile.from_manifest(
+                        bcf_path,
+                        syn_df["bcf_offset"].to_numpy(np.uint64),
+                        syn_df["bcf_size"].to_numpy(np.uint64),
+                    )
+                else:
+                    self.bcf_store = BCFStoreFile(bcf_path)
+                self.syn_image_index_list = syn_df["bcf_index"].to_numpy(np.int64)
+            else:
+                self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
+                self.syn_image_index_list = np.empty(0, dtype=np.int64)
+            self.num_syn_images = len(self.syn_image_index_list)
+            # Resolve real image paths relative to manifest directory
+            self.real_image_path_list = [
+                str(manifest_dir / p) for p in real_df["filepath"].dropna().tolist()
+            ]
+            self.num_real_images = len(self.real_image_path_list)
+        else:
+            # Load the BCF store file
+            self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
+            # Find the number of synthetic images
+            self.num_syn_images = self.bcf_store.size()
+            # Create the synthetic image index list
+            self.syn_image_index_list = np.arange(self.num_syn_images)
+            # Find the number of images and their full paths
+            self.num_real_images, self.real_image_path_list = self._find_images()
+
         # Create the image cache
         self._cache_data: torch.Tensor | None = None
         self._cache_offsets: torch.Tensor | None = None
@@ -189,21 +220,14 @@ class PretrainData(Dataset):
                 BytesIO(self.bcf_store.get(int(self.syn_image_index_list[index])))
             ).convert("L")
         else:
-            assert self.real_image_dir is not None
             # Get the real image
             image = Image.open(
-                os.path.join(
-                    self.real_image_dir,
-                    self.real_image_name_list[index - self.num_syn_images],
-                )
+                self.real_image_path_list[index - self.num_syn_images]
             ).convert("L")
-            # Check if any of the image dimensions are zero and respample if needed
+            # Check if any of the image dimensions are zero and resample if needed
             while 0 in image.size or 1 in image.size:
                 image = Image.open(
-                    os.path.join(
-                        self.real_image_dir,
-                        self.real_image_name_list[np.random.randint(0, self.num_real_images)],
-                    )
+                    self.real_image_path_list[np.random.randint(0, self.num_real_images)]
                 ).convert("L")
         # Convert the image to a numpy array
         image = np.array(image, dtype=np.uint8)
@@ -283,25 +307,25 @@ class PretrainData(Dataset):
         """
         if self.num_cached_images > 0:
             raise ValueError("The image cache must be empty before splitting the data.")
-        # Shuffle the image names
-        real_image_name_list = copy.deepcopy(self.real_image_name_list)
-        np.random.shuffle(real_image_name_list)
+        # Shuffle the image paths and synthetic indices
+        real_image_path_list = copy.deepcopy(self.real_image_path_list)
+        np.random.shuffle(real_image_path_list)
         syn_image_index_list = copy.deepcopy(self.syn_image_index_list)
         np.random.shuffle(syn_image_index_list)
-        # Split the image names
-        train_real_image_names = real_image_name_list[: int(self.num_real_images * train_ratio)]
-        val_real_image_names = real_image_name_list[int(self.num_real_images * train_ratio) :]
+        # Split
+        train_real_image_paths = real_image_path_list[: int(self.num_real_images * train_ratio)]
+        val_real_image_paths = real_image_path_list[int(self.num_real_images * train_ratio) :]
         train_syn_image_indices = syn_image_index_list[: int(self.num_syn_images * train_ratio)]
         val_syn_image_indices = syn_image_index_list[int(self.num_syn_images * train_ratio) :]
         # Create the training and validation datasets
         train_data = copy.deepcopy(self)
         val_data = copy.deepcopy(self)
-        train_data.real_image_name_list = train_real_image_names
-        val_data.real_image_name_list = val_real_image_names
+        train_data.real_image_path_list = train_real_image_paths
+        val_data.real_image_path_list = val_real_image_paths
         train_data.syn_image_index_list = train_syn_image_indices
         val_data.syn_image_index_list = val_syn_image_indices
-        train_data.num_real_images = len(train_real_image_names)
-        val_data.num_real_images = len(val_real_image_names)
+        train_data.num_real_images = len(train_real_image_paths)
+        val_data.num_real_images = len(val_real_image_paths)
         train_data.num_syn_images = len(train_syn_image_indices)
         val_data.num_syn_images = len(val_syn_image_indices)
 
@@ -311,28 +335,23 @@ class PretrainData(Dataset):
         """Discovers all valid image files in the real images directory.
 
         Scans the data folder for files with common image extensions (.png, .jpg,
-        .jpeg, .gif) and returns their count and filenames. If no data folder is
-        specified (None), returns empty results.
+        .jpeg, .gif) and returns their count and full absolute paths. If no data
+        folder is specified (None), returns empty results.
 
         Returns:
-            A tuple of (num_images, image_names) where num_images is the count of
-            found images and image_names is a list of filenames (not full paths).
+            A tuple of (num_images, image_paths) where num_images is the count of
+            found images and image_paths is a list of absolute file paths.
             Returns (0, []) if real_image_dir is None.
-
-        Note:
-            Only the filename is stored, not the full path. The full path is
-            constructed at load time by joining with real_image_dir.
         """
         if self.real_image_dir is None:
             return 0, []
-        # Get the image names
-        image_name_list = [
-            x
+        # Get the full image paths
+        image_path_list = [
+            os.path.join(self.real_image_dir, x)
             for x in os.listdir(self.real_image_dir)
             if x.endswith((".png", ".jpg", ".jpeg", ".gif"))
         ]
-        # Return the number of images and their names
-        return len(image_name_list), image_name_list
+        return len(image_path_list), image_path_list
 
     def upsample_real_images(self):
         """Upsamples real images to match the number of synthetic images.
@@ -351,10 +370,10 @@ class PretrainData(Dataset):
             and has no guarantees about image diversity.
         """
         # Upsample the real images
-        self.real_image_name_list = np.random.choice(
-            self.real_image_name_list, self.num_syn_images, replace=True
-        )
-        self.num_real_images = len(self.real_image_name_list)
+        self.real_image_path_list = np.random.choice(
+            self.real_image_path_list, self.num_syn_images, replace=True
+        ).tolist()
+        self.num_real_images = len(self.real_image_path_list)
 
     def cache_images(self, num_images_to_cache: int):
         """Preloads images into memory for faster iteration during training.
@@ -468,17 +487,36 @@ class FinetuneData(Dataset):
         self._aug_prob = config.aug_prob
         self._synthetic_pipeline = SyntheticAugmentationPipeline(self._aug_prob)
         self.image_normalization = config.image_normalization
-        # Load the BCF store file
-        self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
-        # Load the labels
-        self.labels = read_label(self.label_file)
-        # Find the number of images
-        self.num_images = self.bcf_store.size()
-        # Create the image index list
-        self.image_index_list = np.arange(self.num_images)
-        # Check that the images and labels are the same size
-        if self.num_images != len(self.labels):
-            raise ValueError("The number of images and labels must be the same.")
+
+        if config.manifest_file is not None:
+            manifest_dir = Path(config.manifest_file).resolve().parent
+            df = pd.read_parquet(config.manifest_file)
+            # Resolve BCF file path and build store
+            bcf_path = str(manifest_dir / df["bcf_file"].iloc[0])
+            if "bcf_offset" in df.columns and not df["bcf_offset"].isna().any():
+                self.bcf_store = BCFStoreFile.from_manifest(
+                    bcf_path,
+                    df["bcf_offset"].to_numpy(np.uint64),
+                    df["bcf_size"].to_numpy(np.uint64),
+                )
+            else:
+                self.bcf_store = BCFStoreFile(bcf_path)
+            self.image_index_list = df["bcf_index"].to_numpy(np.int64)
+            self.labels = df["label"].to_numpy(np.uint32)
+            self.num_images = len(self.image_index_list)
+        else:
+            # Load the BCF store file
+            self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
+            # Load the labels
+            self.labels = read_label(self.label_file)
+            # Find the number of images
+            self.num_images = self.bcf_store.size()
+            # Create the image index list
+            self.image_index_list = np.arange(self.num_images)
+            # Check that the images and labels are the same size
+            if self.num_images != len(self.labels):
+                raise ValueError("The number of images and labels must be the same.")
+
         # Create the image cache
         self._cache_data: torch.Tensor | None = None
         self._cache_offsets: torch.Tensor | None = None
@@ -750,15 +788,31 @@ class EvalData(Dataset):
         self.image_normalization = config.image_normalization
         self.num_image_crops = config.num_image_crops
         self._eval_pipeline = EvalAugmentationPipeline()
-        # Load the BCF store file
-        self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
-        # Load the labels
-        self.labels = read_label(self.label_file)
-        # Find the number of images
-        self.num_images = self.bcf_store.size()
-        # Check that the images and labels are the same size
-        if self.num_images != len(self.labels):
-            raise ValueError("The number of images and labels must be the same.")
+
+        if config.manifest_file is not None:
+            manifest_dir = Path(config.manifest_file).resolve().parent
+            df = pd.read_parquet(config.manifest_file)
+            bcf_path = str(manifest_dir / df["bcf_file"].iloc[0])
+            if "bcf_offset" in df.columns and not df["bcf_offset"].isna().any():
+                self.bcf_store = BCFStoreFile.from_manifest(
+                    bcf_path,
+                    df["bcf_offset"].to_numpy(np.uint64),
+                    df["bcf_size"].to_numpy(np.uint64),
+                )
+            else:
+                self.bcf_store = BCFStoreFile(bcf_path)
+            self.labels = df["label"].to_numpy(np.uint32)
+            self.num_images = len(self.labels)
+        else:
+            # Load the BCF store file
+            self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
+            # Load the labels
+            self.labels = read_label(self.label_file)
+            # Find the number of images
+            self.num_images = self.bcf_store.size()
+            # Check that the images and labels are the same size
+            if self.num_images != len(self.labels):
+                raise ValueError("The number of images and labels must be the same.")
 
     def __len__(self) -> int:
         """Returns the total number of test images in the dataset.

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 
 
@@ -100,6 +102,44 @@ class BCFStoreFile:
         result._file = open(self._filename, "rb")
         result._offsets = self._offsets
 
+        return result
+
+    @classmethod
+    def from_manifest(
+        cls,
+        filename: str,
+        offsets: np.ndarray,
+        sizes: np.ndarray,
+    ) -> BCFStoreFile:
+        """Creates a BCFStoreFile using pre-computed byte offsets from a manifest.
+
+        Bypasses the BCF header read entirely by using byte offsets and sizes that
+        were recorded when the manifest was generated. This is the primary speedup
+        on network filesystems where reading the N-entry BCF index can be slow.
+
+        Args:
+            filename: Path to the BCF store file.
+            offsets: 1-D array of absolute byte offsets (from file start) for each
+                image. dtype should be compatible with uint64.
+            sizes: 1-D array of byte lengths for each image. len(sizes) == len(offsets).
+
+        Returns:
+            A BCFStoreFile instance ready for random-access reads without having
+            performed the header scan.
+        """
+        result = cls.__new__(cls)
+        result._filename = filename
+        result._file = open(filename, "rb")
+        # Convert absolute byte offsets to the relative format expected by get().
+        # get() computes: seek(len(_offsets) * 8 + _offsets[i])
+        # We want that to equal abs_offsets[i], so:
+        #   _offsets[i] = abs_offsets[i] - len(_offsets) * 8
+        # len(_offsets) = N + 1 (N images + sentinel), matching the standard layout.
+        n = len(offsets)
+        header_size = np.uint64((n + 1) * 8)
+        rel = np.array(offsets, dtype=np.uint64) - header_size
+        sentinel = rel[-1] + np.uint64(sizes[-1])
+        result._offsets = np.append(rel, sentinel)
         return result
 
     def get(self, i: int) -> bytes:
