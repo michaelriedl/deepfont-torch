@@ -33,7 +33,7 @@ checkpoint_frequency: 1
 log_every_n_steps: 1000
 
 # Reproducibility
-seed: null
+seed: 0
 
 # --- Pretrain-specific ---
 
