@@ -279,8 +279,8 @@ class TestEarlyStoppingCallback(unittest.TestCase):
     def test_missing_monitor_key_prints_warning(self):
         cb = self.CB(monitor="val_loss", patience=3, verbose=True)
         trainer = _make_trainer()
-        cb.on_validation_epoch_end(trainer, {"val_acc": _tv(0.5)})
-        trainer.fabric.print.assert_called_once()
+        with self.assertLogs("deepfont.callbacks.early_stopping", level="WARNING"):
+            cb.on_validation_epoch_end(trainer, {"val_acc": _tv(0.5)})
 
     # verbose=False
 
@@ -732,8 +732,8 @@ class TestModelCheckpointCallback(unittest.TestCase):
     def test_missing_monitor_key_prints_warning(self):
         cb = self.CB(monitor="val_loss", mode="min", verbose=True)
         trainer = self._make_ckpt_trainer()
-        cb.on_validation_epoch_end(trainer, {"val_acc": _tv(0.9)})
-        trainer.fabric.print.assert_called_once()
+        with self.assertLogs("deepfont.callbacks.model_checkpoint", level="WARNING"):
+            cb.on_validation_epoch_end(trainer, {"val_acc": _tv(0.9)})
 
     # not global zero
 

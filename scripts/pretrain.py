@@ -11,17 +11,20 @@ Usage:
 """
 
 import os
+import logging
 from typing import Any
 from pathlib import Path
 
 import hydra
-from omegaconf import DictConfig
+from omegaconf import OmegaConf, DictConfig
 
 # Auto-detect project root from script location (scripts/ -> parent).
 # An explicit PROJECT_ROOT env var takes precedence if set.
 os.environ.setdefault("PROJECT_ROOT", str(Path(__file__).resolve().parent.parent))
 
 from deepfont.trainer.pretrain import PretrainTrainer
+
+logger = logging.getLogger(__name__)
 
 
 def instantiate_callbacks(callbacks_cfg: DictConfig | None) -> list[Any]:
@@ -66,6 +69,8 @@ def instantiate_loggers(logger_cfg: DictConfig | None) -> list[Any]:
 @hydra.main(config_path="../configs", config_name="pretrain", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     """Run DeepFont autoencoder pretraining."""
+    logger.info("Config:\n%s", OmegaConf.to_yaml(cfg))
+
     # Instantiate Pydantic configs via Hydra _target_
     data_config = hydra.utils.instantiate(cfg.data)
     model_config = hydra.utils.instantiate(cfg.model)

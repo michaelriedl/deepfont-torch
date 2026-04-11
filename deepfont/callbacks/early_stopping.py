@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -80,10 +83,13 @@ class EarlyStoppingCallback:
     def on_validation_epoch_end(self, trainer, val_metrics) -> None:
         """Check for improvement and update the patience counter."""
         if self.monitor not in val_metrics:
-            trainer.fabric.print(
-                f"[EarlyStopping] monitored key '{self.monitor}' not found in "
-                f"val_metrics (available: {list(val_metrics.keys())}). Skipping."
-            )
+            if trainer.fabric.is_global_zero:
+                logger.warning(
+                    "[EarlyStopping] monitored key '%s' not found in val_metrics "
+                    "(available: %s). Skipping.",
+                    self.monitor,
+                    list(val_metrics.keys()),
+                )
             return
 
         current: float = val_metrics[self.monitor].item()
@@ -98,15 +104,19 @@ class EarlyStoppingCallback:
             self._wait = 0
         else:
             self._wait += 1
-            if self.verbose:
-                trainer.fabric.print(
-                    f"[EarlyStopping] No improvement in '{self.monitor}' "
-                    f"({self._wait}/{self.patience}). Best: {self._best:.6f}"
+            if self.verbose and trainer.fabric.is_global_zero:
+                logger.info(
+                    "[EarlyStopping] No improvement in '%s' (%d/%d). Best: %.6f",
+                    self.monitor,
+                    self._wait,
+                    self.patience,
+                    self._best,
                 )
             if self._wait >= self.patience:
-                if self.verbose:
-                    trainer.fabric.print(
-                        f"[EarlyStopping] Stopping training. '{self.monitor}' "
-                        f"has not improved for {self.patience} epochs."
+                if self.verbose and trainer.fabric.is_global_zero:
+                    logger.info(
+                        "[EarlyStopping] Stopping training. '%s' has not improved for %d epochs.",
+                        self.monitor,
+                        self.patience,
                     )
                 trainer.should_stop = True

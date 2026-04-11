@@ -1,5 +1,7 @@
 """Trainer for the DeepFont supervised fine-tuning stage."""
 
+import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F  # noqa: N812
@@ -15,6 +17,8 @@ from deepfont.models.deepfont import DeepFont
 
 from .base import BaseTrainer
 from .config import FinetuneConfig
+
+logger = logging.getLogger(__name__)
 
 
 class FinetuneTrainer(BaseTrainer):
@@ -276,5 +280,6 @@ class FinetuneTrainer(BaseTrainer):
                     iterable.set_postfix({"acc": f"{correct / total:.4f}"})
 
         accuracy = correct / total
-        self.fabric.print(f"TTA Evaluation: accuracy={accuracy:.4f} ({correct}/{total})")
+        if self.fabric.is_global_zero:
+            logger.info("TTA Evaluation: accuracy=%.4f (%d/%d)", accuracy, correct, total)
         return {"accuracy": accuracy, "correct": correct, "total": total}

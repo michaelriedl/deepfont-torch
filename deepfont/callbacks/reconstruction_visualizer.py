@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import os
+import logging
 from dataclasses import dataclass
 
 import torch
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -138,4 +141,4 @@ class ReconstructionVisualizerCallback:
         os.makedirs(self.output_dir, exist_ok=True)
         out_path = os.path.join(self.output_dir, f"epoch-{trainer.current_epoch:04d}.png")
         save_image(grid, out_path)
-        trainer.fabric.print(f"[ReconstructionVisualizer] Saved grid → {out_path}")
+        logger.info("[ReconstructionVisualizer] Saved grid → %s", out_path)

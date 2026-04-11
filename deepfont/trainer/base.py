@@ -8,6 +8,7 @@ checkpointing, metrics logging, and progress display.
 """
 
 import os
+import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -21,6 +22,8 @@ from lightning.fabric.loggers import Logger
 from torch.optim.lr_scheduler import LRScheduler
 
 from .config import TrainerConfig
+
+logger = logging.getLogger(__name__)
 
 
 class BaseTrainer(ABC):
@@ -161,6 +164,20 @@ class BaseTrainer(ABC):
         # and mixed-precision, then wrap DataLoaders for distributed samplers.
         model, optimizer = self.fabric.setup(model, optimizer)
         train_loader, val_loader = self.fabric.setup_dataloaders(train_loader, val_loader)
+
+        if self.fabric.is_global_zero:
+            logger.info(
+                "Starting training: max_epochs=%s, devices=%s, precision=%s, seed=%s",
+                self.config.max_epochs,
+                self.config.devices,
+                self.config.precision,
+                self.config.seed,
+            )
+            logger.info(
+                "Dataset: train_batches=%d, val_batches=%d",
+                len(train_loader),
+                len(val_loader),
+            )
 
         # Expose training objects on self so callbacks can access them.
         self.model = model
@@ -325,10 +342,12 @@ class BaseTrainer(ABC):
             {k: v.item() for k, v in epoch_metrics.items()},
             step=self.global_step,
         )
-        self.fabric.print(
-            f"Epoch {self.current_epoch} | "
-            + " | ".join(f"{k}={v.item():.4f}" for k, v in epoch_metrics.items())
-        )
+        if self.fabric.is_global_zero:
+            logger.info(
+                "Epoch %d | %s",
+                self.current_epoch,
+                " | ".join(f"{k}={v.item():.4f}" for k, v in epoch_metrics.items()),
+            )
 
         self.fabric.call("on_validation_epoch_end", trainer=self, val_metrics=epoch_metrics)
         model.train()
@@ -349,18 +368,23 @@ class BaseTrainer(ABC):
             f"epoch-{self.current_epoch:04d}.ckpt",
         )
         self.fabric.save(path, save_state)
-        self.fabric.print(f"Saved checkpoint → {path}")
+        if self.fabric.is_global_zero:
+            logger.info("Saved checkpoint → %s", path)
 
     def _load_checkpoint(self, state: dict[str, Any], path: str) -> None:
         """Restore a checkpoint in-place, updating epoch / step counters."""
         remainder = self.fabric.load(path, state)
         self.global_step = remainder.pop("global_step", 0)
         self.current_epoch = remainder.pop("current_epoch", 0)
-        if remainder:
-            self.fabric.print(f"[WARNING] Unused checkpoint keys: {list(remainder.keys())}")
-        self.fabric.print(
-            f"Resumed from {path} (epoch={self.current_epoch}, step={self.global_step})"
-        )
+        if remainder and self.fabric.is_global_zero:
+            logger.warning("Unused checkpoint keys: %s", list(remainder.keys()))
+        if self.fabric.is_global_zero:
+            logger.info(
+                "Resumed from %s (epoch=%d, step=%d)",
+                path,
+                self.current_epoch,
+                self.global_step,
+            )
 
     # Helpers
 

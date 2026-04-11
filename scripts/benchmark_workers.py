@@ -9,10 +9,10 @@ Usage:
     python scripts/benchmark_workers.py --workers 0 2 4 8 16 --batches 50
 """
 
-import argparse
 import os
 import sys
 import time
+import argparse
 
 # Ensure project root is on the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
