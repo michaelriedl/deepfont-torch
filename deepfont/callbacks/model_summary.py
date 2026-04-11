@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -49,4 +52,5 @@ class ModelSummaryCallback:
             depth=self.max_depth,
             verbose=0,
         )
-        trainer.fabric.print(model_info)
+        if trainer.fabric.is_global_zero:
+            logger.info("%s", model_info)

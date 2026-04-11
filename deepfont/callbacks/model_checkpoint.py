@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+import logging
 from typing import Any
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -84,10 +87,13 @@ class ModelCheckpointCallback:
     def on_validation_epoch_end(self, trainer, val_metrics) -> None:
         """Save a checkpoint if the current metric enters the top-k."""
         if self.monitor not in val_metrics:
-            trainer.fabric.print(
-                f"[ModelCheckpoint] monitored key '{self.monitor}' not found in "
-                f"val_metrics (available: {list(val_metrics.keys())}). Skipping."
-            )
+            if trainer.fabric.is_global_zero:
+                logger.warning(
+                    "[ModelCheckpoint] monitored key '%s' not found in val_metrics "
+                    "(available: %s). Skipping.",
+                    self.monitor,
+                    list(val_metrics.keys()),
+                )
             return
 
         current: float = val_metrics[self.monitor].item()
@@ -136,8 +142,11 @@ class ModelCheckpointCallback:
         trainer.fabric.save(path, save_state)
 
         if self.verbose:
-            trainer.fabric.print(
-                f"[ModelCheckpoint] Saved new best → {path} ({self.monitor}={current:.6f})"
+            logger.info(
+                "[ModelCheckpoint] Saved new best → %s (%s=%.6f)",
+                path,
+                self.monitor,
+                current,
             )
 
         # Insert new entry and keep list sorted ascending by score.
@@ -156,4 +165,4 @@ class ModelCheckpointCallback:
             if os.path.exists(worst_path):
                 os.remove(worst_path)
                 if self.verbose:
-                    trainer.fabric.print(f"[ModelCheckpoint] Removed old checkpoint: {worst_path}")
+                    logger.info("[ModelCheckpoint] Removed old checkpoint: %s", worst_path)

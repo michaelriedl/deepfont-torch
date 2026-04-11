@@ -1,6 +1,7 @@
 """Trainer for the DeepFont autoencoder pretraining stage."""
 
 import os
+import logging
 
 import torch
 import torch.nn as nn
@@ -16,6 +17,8 @@ from deepfont.models.deepfont import DeepFontAE
 
 from .base import BaseTrainer
 from .config import PretrainConfig
+
+logger = logging.getLogger(__name__)
 
 
 class PretrainTrainer(BaseTrainer):
@@ -182,7 +185,8 @@ class PretrainTrainer(BaseTrainer):
             os.makedirs(out_dir, exist_ok=True)
             torch.save(model_state, output_path)
 
-        self.fabric.print(f"Saved encoder weights → {output_path}")
+        if self.fabric.is_global_zero:
+            logger.info("Saved encoder weights → %s", output_path)
 
     # Private helpers
 
