@@ -8,3 +8,4 @@ synthetic_bcf_file: "${paths.data_dir}deepfont_data/BCF format/VFR_syn_train/tra
 real_image_dir: "${paths.data_dir}deepfont_data/Raw Image/VFR_real_u/scrape-wtf-new" # directory of real images; null = synthetic only
 aug_prob: 0.5
 image_normalization: "0to1" # "0to1" or "-1to1"
+manifest_file: "${paths.data_dir}manifests/pretrain.parquet"  # path to parquet manifest; null = scan files at runtime

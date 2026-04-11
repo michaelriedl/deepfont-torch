@@ -58,6 +58,14 @@ class PretrainDataConfig(BaseModel):
             '[0, 1], "-1to1" scales to [-1, 1].'
         ),
     )
+    manifest_file: str | None = Field(
+        default=None,
+        description=(
+            "Path to a parquet manifest file. When set, image enumeration and label "
+            "loading are read from the manifest instead of scanning the filesystem. "
+            "All paths in the manifest are relative to the manifest file's directory."
+        ),
+    )
 
 
 class FinetuneDataConfig(BaseModel):
@@ -98,6 +106,14 @@ class FinetuneDataConfig(BaseModel):
         description=(
             'Normalization scheme for pixel values. "0to1" scales to '
             '[0, 1], "-1to1" scales to [-1, 1].'
+        ),
+    )
+    manifest_file: str | None = Field(
+        default=None,
+        description=(
+            "Path to a parquet manifest file. When set, image enumeration and label "
+            "loading are read from the manifest instead of scanning the filesystem. "
+            "All paths in the manifest are relative to the manifest file's directory."
         ),
     )
 
@@ -141,5 +157,13 @@ class EvalDataConfig(BaseModel):
             "Number of augmented crops to generate per image for test-time "
             "augmentation. More crops improve accuracy but increase "
             "computation time."
+        ),
+    )
+    manifest_file: str | None = Field(
+        default=None,
+        description=(
+            "Path to a parquet manifest file. When set, label loading is read from "
+            "the manifest instead of scanning the filesystem. All paths in the manifest "
+            "are relative to the manifest file's directory."
         ),
     )
