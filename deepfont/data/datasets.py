@@ -1,7 +1,7 @@
 import os
 import copy
-from abc import abstractmethod
 from io import BytesIO
+from abc import abstractmethod
 from pathlib import Path
 
 import numpy as np
