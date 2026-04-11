@@ -1,5 +1,6 @@
 import os
 import copy
+from abc import abstractmethod
 from io import BytesIO
 from pathlib import Path
 
@@ -50,6 +51,14 @@ class BaseDataset(Dataset):
     Subclasses must set ``self.image_normalization`` before calling any helper
     that depends on it, and must implement ``_load_image``.
     """
+
+    image_normalization: str
+
+    @abstractmethod
+    def __len__(self) -> int: ...
+
+    @abstractmethod
+    def _load_image(self, index: int) -> torch.Tensor: ...
 
     @staticmethod
     def _build_bcf_store(bcf_path: str, df: pd.DataFrame) -> BCFStoreFile:
@@ -760,7 +769,7 @@ class EvalData(BaseDataset):
         return self.num_images
 
     def _load_image(self, index: int) -> torch.Tensor:
-        raise NotImplementedError("EvalData does not support _load_image")
+        raise NotImplementedError
 
     def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
         """Generates multiple augmented crops of an image with its label.
