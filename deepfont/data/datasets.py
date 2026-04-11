@@ -44,7 +44,133 @@ def bcf_worker_init_fn(worker_id: int) -> None:
         dataset.bcf_store.reset_file_pointer()  # ty: ignore[unresolved-attribute]
 
 
-class PretrainData(Dataset):
+class BaseDataset(Dataset):
+    """Base class providing shared caching, normalization, and BCF-store helpers.
+
+    Subclasses must set ``self.image_normalization`` before calling any helper
+    that depends on it, and must implement ``_load_image``.
+    """
+
+    @staticmethod
+    def _build_bcf_store(bcf_path: str, df: pd.DataFrame) -> BCFStoreFile:
+        """Build a BCFStoreFile, using per-entry offsets when available.
+
+        Args:
+            bcf_path: Absolute path to the BCF file.
+            df: Manifest DataFrame slice for this BCF file. Must contain
+                ``bcf_offset`` and ``bcf_size`` columns when offset-indexed.
+
+        Returns:
+            A BCFStoreFile opened either with or without an offset table.
+        """
+        if "bcf_offset" in df.columns and not df["bcf_offset"].isna().any():
+            return BCFStoreFile.from_manifest(
+                bcf_path,
+                df["bcf_offset"].to_numpy(np.uint64),
+                df["bcf_size"].to_numpy(np.uint64),
+            )
+        return BCFStoreFile(bcf_path)
+
+    def _init_cache(self) -> None:
+        """Initialize the flat image cache to an empty state."""
+        self._cache_data: torch.Tensor | None = None
+        self._cache_offsets: torch.Tensor | None = None
+        self._cache_shapes: torch.Tensor | None = None
+        self.num_cached_images = 0
+
+    def _normalize(self, image: torch.Tensor) -> torch.Tensor:
+        """Normalize an image tensor according to ``self.image_normalization``.
+
+        Args:
+            image: Raw image tensor with pixel values in [0, 255].
+
+        Returns:
+            Normalized image tensor (float32).
+        """
+        if self.image_normalization == "0to1":
+            return image / 255.0
+        elif self.image_normalization == "-1to1":
+            return (image / 127.5) - 1.0
+        return image
+
+    def _get_cached_or_loaded(self, index: int) -> torch.Tensor:
+        """Return the raw image at *index* from the cache or from disk.
+
+        Args:
+            index: Dataset index of the image to retrieve.
+
+        Returns:
+            Raw image tensor of shape (1, H, W) with dtype uint8.
+        """
+        if self.num_cached_images > 0 and index < self.num_cached_images:
+            assert self._cache_offsets is not None
+            assert self._cache_shapes is not None
+            assert self._cache_data is not None
+            offset = self._cache_offsets[index].item()
+            h, w = self._cache_shapes[index]
+            # clone() so the augmentation pipeline doesn't write back
+            # into the cache buffer (which would also trigger COW copies
+            # in forked DataLoader workers).
+            return self._cache_data[offset : offset + h * w].reshape(1, h, w).clone()
+        return self._load_image(index)
+
+    def cache_images(self, num_images_to_cache: int) -> None:
+        """Preloads images into memory for faster iteration during training.
+
+        Loads the first N images (in their raw, unaugmented form) into a single
+        flat shared-memory tensor. An offsets tensor and shapes tensor allow
+        reconstructing individual images on access.
+
+        Using a single shared-memory tensor (instead of one per image) avoids
+        exhausting file descriptor limits and prevents copy-on-write duplication
+        when DataLoader workers are forked.
+
+        Augmentations are still applied on-the-fly even to cached images, so each
+        access returns a different augmented version.
+
+        Args:
+            num_images_to_cache: The maximum number of images to cache. If this
+                exceeds the dataset size, all images will be cached. Memory usage
+                scales linearly with this value.
+
+        Note:
+            Caching loads RAW images before augmentation. The same cached image
+            produces different outputs due to random augmentations. Images are
+            cached starting from index 0, so synthetic images are cached first.
+
+        Warning:
+            This method is incompatible with split_data_random(). The cache must
+            be empty before splitting, and should be repopulated after splitting.
+        """
+        self.num_cached_images = min(num_images_to_cache, len(self))
+        # First pass: record shapes to compute total size without
+        # keeping all image tensors in memory simultaneously.
+        shapes = []
+        total_pixels = 0
+        for index in range(self.num_cached_images):
+            image = self._load_image(index)
+            h, w = image.shape[1], image.shape[2]
+            shapes.append((h, w))
+            total_pixels += h * w
+        # Allocate the flat buffer and metadata tensors, then fill in
+        # a second pass so only one image is in memory at a time.
+        offsets = []
+        offset = 0
+        for h, w in shapes:
+            offsets.append(offset)
+            offset += h * w
+        self._cache_offsets = torch.tensor(offsets, dtype=torch.int64)
+        self._cache_shapes = torch.tensor(shapes, dtype=torch.int64)
+        self._cache_data = torch.empty(total_pixels, dtype=torch.uint8)
+        # Second pass: load images directly into the flat buffer.
+        for index in range(self.num_cached_images):
+            image = self._load_image(index)
+            o = self._cache_offsets[index].item()
+            h, w = shapes[index]
+            self._cache_data[o : o + h * w] = image.reshape(-1)
+
+
+class PretrainData(BaseDataset):
     """PyTorch Dataset for autoencoder pretraining with mixed synthetic and real images.
 
     This dataset combines synthetic images from a BCF (Binary Concatenated File) store
@@ -111,14 +237,7 @@ class PretrainData(Dataset):
             # Build BCF store if there are synthetic images
             if len(syn_df) > 0:
                 bcf_path = str(manifest_dir / syn_df["bcf_file"].iloc[0])
-                if "bcf_offset" in syn_df.columns and not syn_df["bcf_offset"].isna().any():
-                    self.bcf_store = BCFStoreFile.from_manifest(
-                        bcf_path,
-                        syn_df["bcf_offset"].to_numpy(np.uint64),
-                        syn_df["bcf_size"].to_numpy(np.uint64),
-                    )
-                else:
-                    self.bcf_store = BCFStoreFile(bcf_path)
+                self.bcf_store = self._build_bcf_store(bcf_path, syn_df)
                 self.syn_image_index_list = syn_df["bcf_index"].to_numpy(np.int64)
             else:
                 self.bcf_store = BCFStoreFile(self.synthetic_bcf_file)
@@ -139,11 +258,7 @@ class PretrainData(Dataset):
             # Find the number of images and their full paths
             self.num_real_images, self.real_image_path_list = self._find_images()
 
-        # Create the image cache
-        self._cache_data: torch.Tensor | None = None
-        self._cache_offsets: torch.Tensor | None = None
-        self._cache_shapes: torch.Tensor | None = None
-        self.num_cached_images = 0
+        self._init_cache()
 
     @property
     def aug_prob(self) -> float:
@@ -182,15 +297,7 @@ class PretrainData(Dataset):
             A normalized image tensor of shape (1, 105, 105) and dtype float32,
             ready for model input.
         """
-        # Get the image
-        image = self._get_image(index)
-        # Normalize the image
-        if self.image_normalization == "0to1":
-            image = image / 255.0
-        elif self.image_normalization == "-1to1":
-            image = (image / 127.5) - 1.0
-
-        return image
+        return self._normalize(self._get_image(index))
 
     def _load_image(self, index: int) -> torch.Tensor:
         """Loads a raw image from disk without augmentation.
@@ -252,28 +359,12 @@ class PretrainData(Dataset):
             Images with index < num_syn_images use the synthetic pipeline, while
             others use the real image pipeline.
         """
-        # Check if the image is cached
-        if self.num_cached_images > 0 and index < self.num_cached_images:
-            assert self._cache_offsets is not None
-            assert self._cache_shapes is not None
-            assert self._cache_data is not None
-            offset = self._cache_offsets[index].item()
-            h, w = self._cache_shapes[index]
-            # clone() so the augmentation pipeline doesn't write back
-            # into the cache buffer (which would also trigger COW copies
-            # in forked DataLoader workers).
-            image = self._cache_data[offset : offset + h * w].reshape(1, h, w).clone()
-        else:
-            image = self._load_image(index)
-        # Apply the augmentation pipeline
-        image = image.numpy()
+        image = self._get_cached_or_loaded(index).numpy()
         if index < self.num_syn_images:
             image = self._synthetic_pipeline(image[0])
         else:
             image = self._real_pipeline(image[0])
-        image = torch.from_numpy(image).float().unsqueeze(0)
-
-        return image
+        return torch.from_numpy(image).float().unsqueeze(0)
 
     def split_data_random(self, train_ratio: float = 0.8):
         """Randomly splits the dataset into training and validation subsets.
@@ -373,63 +464,8 @@ class PretrainData(Dataset):
         ).tolist()
         self.num_real_images = len(self.real_image_path_list)
 
-    def cache_images(self, num_images_to_cache: int):
-        """Preloads images into memory for faster iteration during training.
 
-        Loads the first N images (in their raw, unaugmented form) into a single
-        flat shared-memory tensor. An offsets tensor and shapes tensor allow
-        reconstructing individual images on access.
-
-        Using a single shared-memory tensor (instead of one per image) avoids
-        exhausting file descriptor limits and prevents copy-on-write duplication
-        when DataLoader workers are forked.
-
-        Augmentations are still applied on-the-fly even to cached images, so each
-        access returns a different augmented version.
-
-        Args:
-            num_images_to_cache: The maximum number of images to cache. If this
-                exceeds the dataset size, all images will be cached. Memory usage
-                scales linearly with this value.
-
-        Note:
-            Caching loads RAW images before augmentation. The same cached image
-            produces different outputs due to random augmentations. Images are
-            cached starting from index 0, so synthetic images are cached first.
-
-        Warning:
-            This method is incompatible with split_data_random(). The cache must
-            be empty before splitting, and should be repopulated after splitting.
-        """
-        self.num_cached_images = min(num_images_to_cache, len(self))
-        # First pass: record shapes to compute total size without
-        # keeping all image tensors in memory simultaneously.
-        shapes = []
-        total_pixels = 0
-        for index in range(self.num_cached_images):
-            image = self._load_image(index)
-            h, w = image.shape[1], image.shape[2]
-            shapes.append((h, w))
-            total_pixels += h * w
-        # Allocate the flat buffer and metadata tensors, then fill in
-        # a second pass so only one image is in memory at a time.
-        offsets = []
-        offset = 0
-        for h, w in shapes:
-            offsets.append(offset)
-            offset += h * w
-        self._cache_offsets = torch.tensor(offsets, dtype=torch.int64)
-        self._cache_shapes = torch.tensor(shapes, dtype=torch.int64)
-        self._cache_data = torch.empty(total_pixels, dtype=torch.uint8)
-        # Second pass: load images directly into the flat buffer.
-        for index in range(self.num_cached_images):
-            image = self._load_image(index)
-            o = self._cache_offsets[index].item()
-            h, w = shapes[index]
-            self._cache_data[o : o + h * w] = image.reshape(-1)
-
-
-class FinetuneData(Dataset):
+class FinetuneData(BaseDataset):
     """PyTorch Dataset for font classification fine-tuning with labeled data.
 
     This dataset is designed for supervised fine-tuning of font classification models.
@@ -489,16 +525,8 @@ class FinetuneData(Dataset):
         if config.manifest_file is not None:
             manifest_dir = Path(config.manifest_file).resolve().parent
             df = pd.read_parquet(config.manifest_file)
-            # Resolve BCF file path and build store
             bcf_path = str(manifest_dir / df["bcf_file"].iloc[0])
-            if "bcf_offset" in df.columns and not df["bcf_offset"].isna().any():
-                self.bcf_store = BCFStoreFile.from_manifest(
-                    bcf_path,
-                    df["bcf_offset"].to_numpy(np.uint64),
-                    df["bcf_size"].to_numpy(np.uint64),
-                )
-            else:
-                self.bcf_store = BCFStoreFile(bcf_path)
+            self.bcf_store = self._build_bcf_store(bcf_path, df)
             self.image_index_list = df["bcf_index"].to_numpy(np.int64)
             self.labels = df["label"].to_numpy(np.uint32)
             self.num_images = len(self.image_index_list)
@@ -515,11 +543,7 @@ class FinetuneData(Dataset):
             if self.num_images != len(self.labels):
                 raise ValueError("The number of images and labels must be the same.")
 
-        # Create the image cache
-        self._cache_data: torch.Tensor | None = None
-        self._cache_offsets: torch.Tensor | None = None
-        self._cache_shapes: torch.Tensor | None = None
-        self.num_cached_images = 0
+        self._init_cache()
 
     @property
     def aug_prob(self) -> float:
@@ -552,17 +576,8 @@ class FinetuneData(Dataset):
                 - image: Normalized tensor of shape (1, 105, 105) with dtype float32
                 - label: Integer class label tensor with dtype int64 (long)
         """
-        # Get the image
-        image = self._get_image(index)
-        # Normalize the image
-        if self.image_normalization == "0to1":
-            image = image / 255.0
-        elif self.image_normalization == "-1to1":
-            image = (image / 127.5) - 1.0
-        # Get the label
-        label = int(self.labels[index])
-        label = torch.tensor(label).long()
-
+        image = self._normalize(self._get_image(index))
+        label = torch.tensor(int(self.labels[index])).long()
         return image, label
 
     def _load_image(self, index: int) -> torch.Tensor:
@@ -607,25 +622,9 @@ class FinetuneData(Dataset):
             Always uses the synthetic augmentation pipeline since FinetuneData
             only contains synthetic images.
         """
-        # Check if the image is cached
-        if self.num_cached_images > 0 and index < self.num_cached_images:
-            assert self._cache_offsets is not None
-            assert self._cache_shapes is not None
-            assert self._cache_data is not None
-            offset = self._cache_offsets[index].item()
-            h, w = self._cache_shapes[index]
-            # clone() so the augmentation pipeline doesn't write back
-            # into the cache buffer (which would also trigger COW copies
-            # in forked DataLoader workers).
-            image = self._cache_data[offset : offset + h * w].reshape(1, h, w).clone()
-        else:
-            image = self._load_image(index)
-        # Apply the augmentation pipeline
-        image = image.numpy()
+        image = self._get_cached_or_loaded(index).numpy()
         image = self._synthetic_pipeline(image[0])
-        image = torch.from_numpy(image).float().unsqueeze(0)
-
-        return image
+        return torch.from_numpy(image).float().unsqueeze(0)
 
     def split_data_random(self, train_ratio: float = 0.8):
         """Performs stratified random split into training and validation sets.
@@ -681,61 +680,8 @@ class FinetuneData(Dataset):
 
         return train_data, val_data
 
-    def cache_images(self, num_images_to_cache: int):
-        """Preloads images into memory for faster training iteration.
 
-        Loads the first N images (in their raw, unaugmented form) into a single
-        flat shared-memory tensor. An offsets tensor and shapes tensor allow
-        reconstructing individual images on access.
-
-        Using a single shared-memory tensor (instead of one per image) avoids
-        exhausting file descriptor limits and prevents copy-on-write duplication
-        when DataLoader workers are forked.
-
-        Args:
-            num_images_to_cache: The maximum number of images to cache. If this
-                exceeds the dataset size, all images will be cached. Memory usage
-                scales linearly with this value.
-
-        Note:
-            Cached images are stored in raw form before augmentation, so each
-            access still produces a different augmented version. Images are cached
-            starting from index 0.
-
-        Warning:
-            Must be called after split_data_random(), not before. The cache must
-            be empty before splitting the dataset.
-        """
-        self.num_cached_images = min(num_images_to_cache, len(self))
-        # First pass: record shapes to compute total size without
-        # keeping all image tensors in memory simultaneously.
-        shapes = []
-        total_pixels = 0
-        for index in range(self.num_cached_images):
-            image = self._load_image(index)
-            h, w = image.shape[1], image.shape[2]
-            shapes.append((h, w))
-            total_pixels += h * w
-        # Allocate tensors in shared memory up front so the second pass
-        # Allocate the flat buffer and metadata tensors, then fill in
-        # a second pass so only one image is in memory at a time.
-        offsets = []
-        offset = 0
-        for h, w in shapes:
-            offsets.append(offset)
-            offset += h * w
-        self._cache_offsets = torch.tensor(offsets, dtype=torch.int64)
-        self._cache_shapes = torch.tensor(shapes, dtype=torch.int64)
-        self._cache_data = torch.empty(total_pixels, dtype=torch.uint8)
-        # Second pass: load images directly into the flat buffer.
-        for index in range(self.num_cached_images):
-            image = self._load_image(index)
-            o = self._cache_offsets[index].item()
-            h, w = shapes[index]
-            self._cache_data[o : o + h * w] = image.reshape(-1)
-
-
-class EvalData(Dataset):
+class EvalData(BaseDataset):
     """PyTorch Dataset for font classification evaluation with test-time augmentation.
 
     This dataset is optimized for model evaluation and inference, generating multiple
@@ -791,14 +737,7 @@ class EvalData(Dataset):
             manifest_dir = Path(config.manifest_file).resolve().parent
             df = pd.read_parquet(config.manifest_file)
             bcf_path = str(manifest_dir / df["bcf_file"].iloc[0])
-            if "bcf_offset" in df.columns and not df["bcf_offset"].isna().any():
-                self.bcf_store = BCFStoreFile.from_manifest(
-                    bcf_path,
-                    df["bcf_offset"].to_numpy(np.uint64),
-                    df["bcf_size"].to_numpy(np.uint64),
-                )
-            else:
-                self.bcf_store = BCFStoreFile(bcf_path)
+            self.bcf_store = self._build_bcf_store(bcf_path, df)
             self.labels = df["label"].to_numpy(np.uint32)
             self.num_images = len(self.labels)
         else:
@@ -819,6 +758,9 @@ class EvalData(Dataset):
             The number of images available for evaluation.
         """
         return self.num_images
+
+    def _load_image(self, index: int) -> torch.Tensor:
+        raise NotImplementedError("EvalData does not support _load_image")
 
     def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
         """Generates multiple augmented crops of an image with its label.
@@ -856,15 +798,9 @@ class EvalData(Dataset):
         image = np.array(image, dtype=np.uint8)
         # Apply the augmentations
         image_crops = self._eval_pipeline(image, self.num_image_crops)
-        # Convert the image to a tensor
-        image = torch.tensor(image_crops).float().unsqueeze(1)
-        # Normalize the image
-        if self.image_normalization == "0to1":
-            image = image / 255.0
-        elif self.image_normalization == "-1to1":
-            image = (image / 127.5) - 1.0
+        # Convert the image to a tensor and normalize
+        image = self._normalize(torch.tensor(image_crops).float().unsqueeze(1))
         # Get the label
-        label = int(self.labels[index])
-        label = torch.tensor(label).long()
+        label = torch.tensor(int(self.labels[index])).long()
 
         return image, label
