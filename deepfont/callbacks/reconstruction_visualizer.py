@@ -94,8 +94,9 @@ class ReconstructionVisualizerCallback:
             return
         # Only capture once; reuse the same images for every subsequent epoch.
         if self._fixed_samples is None:
-            # batch is a plain image tensor (B, 1, H, W) for PretrainTrainer.
-            self._fixed_samples = batch[: self.num_samples].detach().cpu()
+            # PretrainTrainer emits (images, is_real) tuples; extract just images.
+            images = batch[0] if isinstance(batch, tuple) else batch
+            self._fixed_samples = images[: self.num_samples].detach().cpu()
 
     def on_validation_epoch_end(self, trainer, val_metrics) -> None:
         """Run the fixed sample inputs through the model and save the grid."""

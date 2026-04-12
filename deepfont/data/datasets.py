@@ -290,7 +290,7 @@ class PretrainData(BaseDataset):
         """
         return self.num_syn_images + self.num_real_images
 
-    def __getitem__(self, index) -> torch.Tensor:
+    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
         """Retrieves and augments an image at the specified index.
 
         Loads the image (from cache if available, otherwise from disk), applies
@@ -303,10 +303,15 @@ class PretrainData(BaseDataset):
                 correspond to real images.
 
         Returns:
-            A normalized image tensor of shape (1, 105, 105) and dtype float32,
-            ready for model input.
+            A tuple of (image, is_real) where:
+                - image: Normalized image tensor of shape (1, 105, 105) and dtype
+                  float32, ready for model input.
+                - is_real: Scalar boolean tensor, True when the image comes from
+                  the real-image set, False for synthetic.
         """
-        return self._normalize(self._get_image(index))
+        image = self._normalize(self._get_image(index))
+        is_real = torch.tensor(index >= self.num_syn_images, dtype=torch.bool)
+        return image, is_real
 
     def _load_image(self, index: int) -> torch.Tensor:
         """Loads a raw image from disk without augmentation.
