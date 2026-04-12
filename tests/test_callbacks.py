@@ -900,7 +900,7 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
 
     def test_finalizes_with_available_samples_when_one_type_absent(self):
         """If the val set has no real images, epoch_end locks in syn-only samples."""
-        cb = self.CB(save_every_n_epochs=1, num_samples=4)
+        cb = self.CB(save_every_n_epochs=1, num_samples=4, output_dir=self.output_dir)
         trainer = self._make_rkv_trainer(current_epoch=0)
         # Only synthetic images in the entire val loop
         cb.on_validation_batch_start(self._mixed_batch(b=8, num_real=0), batch_idx=0, trainer=trainer)
@@ -910,7 +910,7 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
 
     def test_captures_all_when_batch_smaller_than_num_samples(self):
         """Fewer available images than num_samples are all captured."""
-        cb = self.CB(save_every_n_epochs=1, num_samples=16)
+        cb = self.CB(save_every_n_epochs=1, num_samples=16, output_dir=self.output_dir)
         trainer = self._make_rkv_trainer(current_epoch=0)
         cb.on_validation_batch_start(self._batch(b=4), batch_idx=0, trainer=trainer)
         cb.on_validation_epoch_end(trainer, {})

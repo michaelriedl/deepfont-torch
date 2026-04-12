@@ -116,7 +116,7 @@ class ReconstructionVisualizerCallback:
             return
 
         images = batch[0].detach().cpu()
-        is_real = batch[1].bool()
+        is_real = batch[1].bool().cpu()
 
         n_real_target = self.num_samples // 2
         n_syn_target = self.num_samples - n_real_target
