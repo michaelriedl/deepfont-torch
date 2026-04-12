@@ -949,6 +949,16 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
         self.assertIsNotNone(cb._fixed_samples)
         self.assertEqual(cb._fixed_samples.shape, (4, 1, 105, 105))
 
+    def test_captures_images_from_list_batch(self):
+        """DataLoader default_collate returns a list, not a tuple — must be handled."""
+        cb = self.CB(save_every_n_epochs=1, num_samples=4)
+        trainer = self._make_rkv_trainer(current_epoch=0)
+        images = self._batch(b=8)
+        is_real = torch.zeros(8, dtype=torch.bool)
+        cb.on_validation_batch_start([images, is_real], batch_idx=0, trainer=trainer)
+        self.assertIsNotNone(cb._fixed_samples)
+        self.assertEqual(cb._fixed_samples.shape, (4, 1, 105, 105))
+
     def test_tuple_batch_produces_png_file(self):
         """A full epoch cycle with a tuple batch saves a grid file."""
         cb = self.CB(save_every_n_epochs=1, num_samples=4, output_dir=self.output_dir)

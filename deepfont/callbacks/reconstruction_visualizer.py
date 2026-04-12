@@ -95,7 +95,7 @@ class ReconstructionVisualizerCallback:
         # Only capture once; reuse the same images for every subsequent epoch.
         if self._fixed_samples is None:
             # PretrainTrainer emits (images, is_real) tuples; extract just images.
-            images = batch[0] if isinstance(batch, tuple) else batch
+            images = batch[0] if isinstance(batch, (tuple, list)) else batch
             self._fixed_samples = images[: self.num_samples].detach().cpu()
 
     def on_validation_epoch_end(self, trainer, val_metrics) -> None:
