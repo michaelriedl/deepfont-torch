@@ -33,17 +33,18 @@ class ReconstructionVisualizerCallback:
     this callback runs the stored sample inputs through the model and saves a
     side-by-side grid of originals and reconstructions as a PNG file.
 
-    Warning:
-        This callback is designed for use with PretrainTrainer only.  It
-        expects batch in on_validation_batch_start to be a plain image tensor
-        of shape (B, 1, H, W).  Attaching it to FinetuneTrainer (where batches
-        are (images, labels) tuples) will raise a TypeError.
+    When batches carry an is_real flag (as emitted by PretrainTrainer), the
+    callback collects num_samples // 2 real and num_samples // 2 synthetic
+    images by scanning across validation batches.  This guarantees both
+    image types appear in the grid even when the first batch is homogeneous.
+    If one type is absent from the entire validation set, the grid is filled
+    with whatever is available.
 
     Args:
         save_every_n_epochs: Save a grid every this many epochs.  Epoch 0 is
             always included.
-        num_samples: Number of images to include in the grid (taken from the
-            start of the first validation batch).
+        num_samples: Total number of images in the grid.  When is_real flags
+            are present, half are real and half are synthetic.
         output_dir: Directory where PNG files are written.  Created
             automatically if it does not exist.
         value_range: Passed directly to torchvision.utils.make_grid as
@@ -79,27 +80,82 @@ class ReconstructionVisualizerCallback:
         self.value_range = value_range
 
         self._fixed_samples: torch.Tensor | None = None
+        self._pending_real: list[torch.Tensor] = []
+        self._pending_syn: list[torch.Tensor] = []
 
     def _is_save_epoch(self, trainer) -> bool:
         return trainer.current_epoch % self.save_every_n_epochs == 0
 
+    def _pending_count(self, pending: list[torch.Tensor]) -> int:
+        return sum(t.shape[0] for t in pending)
+
     def on_validation_batch_start(self, batch, batch_idx, trainer) -> None:
-        """Capture the first num_samples images once and reuse them every epoch.
+        """Collect real and synthetic samples across batches until quotas are met.
 
         The samples are frozen on the first qualifying epoch so that the
         same inputs are visualized across epochs, making it easy to see
         how reconstruction quality evolves over time.
+
+        When the batch carries an is_real flag, num_samples // 2 images of
+        each type are collected by scanning as many batches as needed.
         """
-        if batch_idx != 0 or not self._is_save_epoch(trainer):
+        if not self._is_save_epoch(trainer):
             return
-        # Only capture once; reuse the same images for every subsequent epoch.
-        if self._fixed_samples is None:
-            # PretrainTrainer emits (images, is_real) tuples; extract just images.
-            images = batch[0] if isinstance(batch, (tuple, list)) else batch
-            self._fixed_samples = images[: self.num_samples].detach().cpu()
+        if self._fixed_samples is not None:
+            return  # already locked in for this run
+
+        # Reset pending buffers at the start of each save-epoch's val loop.
+        if batch_idx == 0:
+            self._pending_real = []
+            self._pending_syn = []
+
+        if not isinstance(batch, (tuple, list)):
+            # Plain tensor batch (no type info): capture first batch and lock in.
+            if batch_idx == 0:
+                self._fixed_samples = batch[: self.num_samples].detach().cpu()
+            return
+
+        images = batch[0].detach().cpu()
+        is_real = batch[1].bool()
+
+        n_real_target = self.num_samples // 2
+        n_syn_target = self.num_samples - n_real_target
+
+        need_real = n_real_target - self._pending_count(self._pending_real)
+        need_syn = n_syn_target - self._pending_count(self._pending_syn)
+
+        if need_real > 0:
+            real_imgs = images[is_real][:need_real]
+            if real_imgs.shape[0] > 0:
+                self._pending_real.append(real_imgs)
+
+        if need_syn > 0:
+            syn_imgs = images[~is_real][:need_syn]
+            if syn_imgs.shape[0] > 0:
+                self._pending_syn.append(syn_imgs)
+
+        # Lock in as soon as both quotas are satisfied.
+        if (
+            self._pending_count(self._pending_real) >= n_real_target
+            and self._pending_count(self._pending_syn) >= n_syn_target
+        ):
+            self._fixed_samples = torch.cat(
+                [torch.cat(self._pending_real), torch.cat(self._pending_syn)]
+            )
 
     def on_validation_epoch_end(self, trainer, val_metrics) -> None:
-        """Run the fixed sample inputs through the model and save the grid."""
+        """Finalize pending samples (if any) then run the model and save the grid."""
+        # If the val loop ended before both quotas were filled (e.g. one image
+        # type is absent from the val set), lock in whatever was collected.
+        if self._fixed_samples is None and self._is_save_epoch(trainer):
+            parts = [
+                torch.cat(self._pending_real) if self._pending_real else None,
+                torch.cat(self._pending_syn) if self._pending_syn else None,
+            ]
+            parts = [p for p in parts if p is not None]
+            if parts:
+                self._fixed_samples = torch.cat(parts)
+
         if self._fixed_samples is None or not self._is_save_epoch(trainer):
             return
 
