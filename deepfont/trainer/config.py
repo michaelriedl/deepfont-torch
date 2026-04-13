@@ -12,6 +12,8 @@ from typing import Literal
 
 from pydantic import Field, BaseModel, ConfigDict, field_validator
 
+OptimizerType = Literal["adam", "adamw", "sgd"]
+
 
 class TrainerConfig(BaseModel):
     """Shared configuration for hardware, loop control, checkpointing, and logging.
@@ -89,8 +91,17 @@ class PretrainConfig(TrainerConfig):
     )
 
     # Optimizer
+    optimizer_type: OptimizerType = Field(default="sgd")
     learning_rate: float = Field(default=1e-3, gt=0.0)
     weight_decay: float = Field(default=0.0, ge=0.0)
+    optimizer_kwargs: dict = Field(
+        default_factory=dict,
+        description=(
+            "Extra keyword arguments forwarded to the optimizer constructor. "
+            "SGD: momentum, dampening, nesterov. "
+            "Adam/AdamW: betas, eps, amsgrad."
+        ),
+    )
 
     # LR Scheduler (optional)
     scheduler_type: Literal["cosine", "step", "reduce_on_plateau", "linear"] | None = Field(
@@ -126,8 +137,17 @@ class FinetuneConfig(TrainerConfig):
     )
 
     # Optimizer
+    optimizer_type: OptimizerType = Field(default="sgd")
     learning_rate: float = Field(default=1e-4, gt=0.0)
     weight_decay: float = Field(default=0.0, ge=0.0)
+    optimizer_kwargs: dict = Field(
+        default_factory=dict,
+        description=(
+            "Extra keyword arguments forwarded to the optimizer constructor. "
+            "SGD: momentum, dampening, nesterov. "
+            "Adam/AdamW: betas, eps, amsgrad."
+        ),
+    )
 
     # LR Scheduler (optional)
     scheduler_type: Literal["cosine", "step", "reduce_on_plateau", "linear"] | None = Field(
