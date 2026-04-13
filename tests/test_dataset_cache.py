@@ -149,14 +149,23 @@ class TestPretrainCacheRoundTrip:
 
     def test_getitem_cached_vs_uncached_shapes_match(self, pretrain_dataset):
         """__getitem__ output shape must be the same whether cached or not."""
-        # Get uncached output
-        uncached_out = pretrain_dataset[0]
+        # Get uncached output — __getitem__ returns (image, is_real)
+        uncached_image, _ = pretrain_dataset[0]
 
         pretrain_dataset.cache_images(len(pretrain_dataset))
-        cached_out = pretrain_dataset[0]
+        cached_image, _ = pretrain_dataset[0]
 
-        assert uncached_out.shape == cached_out.shape
-        assert cached_out.shape == (1, 105, 105)
+        assert uncached_image.shape == cached_image.shape
+        assert cached_image.shape == (1, 105, 105)
+
+    def test_getitem_returns_is_real_flag(self, pretrain_dataset):
+        """__getitem__ returns a boolean is_real scalar alongside the image."""
+        for i in range(len(pretrain_dataset)):
+            _, is_real = pretrain_dataset[i]
+            assert is_real.dtype == torch.bool
+            assert is_real.ndim == 0
+            expected = i >= pretrain_dataset.num_syn_images
+            assert is_real.item() == expected
 
     def test_variable_size_images_preserved(self, pretrain_dataset):
         """Images with different dimensions are all preserved correctly."""

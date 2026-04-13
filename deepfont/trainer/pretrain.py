@@ -128,40 +128,66 @@ class PretrainTrainer(BaseTrainer):
     def training_step(
         self,
         model: nn.Module,
-        batch: torch.Tensor,
+        batch: tuple[torch.Tensor, torch.Tensor],
         batch_idx: int,
     ) -> dict[str, torch.Tensor]:
         """Forward + reconstruction loss for a batch of images.
 
         Args:
             model: Fabric-wrapped DeepFontAE.
-            batch: Image tensor of shape (B, 1, H, W).
+            batch: Tuple of (images, is_real) where images has shape (B, 1, H, W)
+                and is_real is a boolean tensor of shape (B,).
             batch_idx: Unused; present for interface compatibility.
 
         Returns:
-            {"loss": scalar_tensor}
+            Dict with "loss" (combined), and "real_loss" / "syn_loss" when the
+            batch contains at least one sample of that type.
         """
-        reconstructed = model(batch)
-        return {"loss": self._reconstruction_loss(reconstructed, batch)}
+        images, is_real = batch
+        reconstructed = model(images)
+        out: dict[str, torch.Tensor] = {"loss": self._reconstruction_loss(reconstructed, images)}
+        real_mask = is_real.bool()
+        if real_mask.any():
+            out["real_loss"] = self._reconstruction_loss(
+                reconstructed[real_mask], images[real_mask]
+            )
+        if (~real_mask).any():
+            out["syn_loss"] = self._reconstruction_loss(
+                reconstructed[~real_mask], images[~real_mask]
+            )
+        return out
 
     def validation_step(
         self,
         model: nn.Module,
-        batch: torch.Tensor,
+        batch: tuple[torch.Tensor, torch.Tensor],
         batch_idx: int,
     ) -> dict[str, torch.Tensor]:
         """Reconstruction loss on a validation batch.
 
         Args:
             model: Fabric-wrapped model in eval mode.
-            batch: Image tensor of shape (B, 1, H, W).
+            batch: Tuple of (images, is_real) where images has shape (B, 1, H, W)
+                and is_real is a boolean tensor of shape (B,).
             batch_idx: Unused; present for interface compatibility.
 
         Returns:
-            {"loss": scalar_tensor}
+            Dict with "loss" (combined), and "real_loss" / "syn_loss" when the
+            batch contains at least one sample of that type.
         """
-        reconstructed = model(batch)
-        return {"loss": self._reconstruction_loss(reconstructed, batch)}
+        images, is_real = batch
+        reconstructed = model(images)
+        out: dict[str, torch.Tensor] = {"loss": self._reconstruction_loss(reconstructed, images)}
+        real_mask = is_real.bool()
+        if real_mask.any():
+            out["real_loss"] = self._reconstruction_loss(
+                reconstructed[real_mask], images[real_mask]
+            )
+        if (~real_mask).any():
+            out["syn_loss"] = self._reconstruction_loss(
+                reconstructed[~real_mask], images[~real_mask]
+            )
+        return out
 
     # Extra utility
 

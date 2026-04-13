@@ -105,6 +105,19 @@ class TestReconstructionLoss:
             trainer._reconstruction_loss(x, x)
 
 
+def _make_batch(
+    b: int = 4,
+    num_real: int = 2,
+    h: int = 105,
+    w: int = 105,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return a (images, is_real) batch tuple as produced by the DataLoader."""
+    images = torch.randn(b, 1, h, w)
+    is_real = torch.zeros(b, dtype=torch.bool)
+    is_real[:num_real] = True
+    return images, is_real
+
+
 class TestTrainingStep:
     """training_step() returns a finite scalar loss dict."""
 
@@ -112,27 +125,46 @@ class TestTrainingStep:
         self.trainer = _make_trainer()
         self.model = DeepFontAE()
 
-    def _batch(self) -> torch.Tensor:
-        return torch.randn(4, 1, 105, 105)
-
     def test_returns_dict_with_loss_key(self):
-        out = self.trainer.training_step(self.model, self._batch(), 0)
+        out = self.trainer.training_step(self.model, _make_batch(), 0)
         assert "loss" in out
 
     def test_loss_is_scalar(self):
-        out = self.trainer.training_step(self.model, self._batch(), 0)
+        out = self.trainer.training_step(self.model, _make_batch(), 0)
         assert out["loss"].ndim == 0
 
     def test_loss_is_finite(self):
-        out = self.trainer.training_step(self.model, self._batch(), 0)
+        out = self.trainer.training_step(self.model, _make_batch(), 0)
         assert torch.isfinite(out["loss"])
 
     def test_batch_idx_is_unused(self):
         """Same batch with different batch_idx produces an identical loss."""
-        batch = self._batch()
+        batch = _make_batch()
         out0 = self.trainer.training_step(self.model, batch, 0)
         out99 = self.trainer.training_step(self.model, batch, 99)
         assert out0["loss"].item() == pytest.approx(out99["loss"].item())
+
+    def test_real_loss_present_when_batch_has_real_images(self):
+        out = self.trainer.training_step(self.model, _make_batch(b=4, num_real=2), 0)
+        assert "real_loss" in out
+        assert out["real_loss"].ndim == 0
+        assert torch.isfinite(out["real_loss"])
+
+    def test_syn_loss_present_when_batch_has_synthetic_images(self):
+        out = self.trainer.training_step(self.model, _make_batch(b=4, num_real=2), 0)
+        assert "syn_loss" in out
+        assert out["syn_loss"].ndim == 0
+        assert torch.isfinite(out["syn_loss"])
+
+    def test_real_loss_absent_when_batch_is_all_synthetic(self):
+        out = self.trainer.training_step(self.model, _make_batch(b=4, num_real=0), 0)
+        assert "real_loss" not in out
+        assert "syn_loss" in out
+
+    def test_syn_loss_absent_when_batch_is_all_real(self):
+        out = self.trainer.training_step(self.model, _make_batch(b=4, num_real=4), 0)
+        assert "syn_loss" not in out
+        assert "real_loss" in out
 
 
 class TestValidationStep:
@@ -142,20 +174,39 @@ class TestValidationStep:
         self.trainer = _make_trainer()
         self.model = DeepFontAE()
 
-    def _batch(self) -> torch.Tensor:
-        return torch.randn(4, 1, 105, 105)
-
     def test_returns_dict_with_loss_key(self):
-        out = self.trainer.validation_step(self.model, self._batch(), 0)
+        out = self.trainer.validation_step(self.model, _make_batch(), 0)
         assert "loss" in out
 
     def test_loss_is_scalar(self):
-        out = self.trainer.validation_step(self.model, self._batch(), 0)
+        out = self.trainer.validation_step(self.model, _make_batch(), 0)
         assert out["loss"].ndim == 0
 
     def test_loss_is_finite(self):
-        out = self.trainer.validation_step(self.model, self._batch(), 0)
+        out = self.trainer.validation_step(self.model, _make_batch(), 0)
         assert torch.isfinite(out["loss"])
+
+    def test_real_loss_present_when_batch_has_real_images(self):
+        out = self.trainer.validation_step(self.model, _make_batch(b=4, num_real=2), 0)
+        assert "real_loss" in out
+        assert out["real_loss"].ndim == 0
+        assert torch.isfinite(out["real_loss"])
+
+    def test_syn_loss_present_when_batch_has_synthetic_images(self):
+        out = self.trainer.validation_step(self.model, _make_batch(b=4, num_real=2), 0)
+        assert "syn_loss" in out
+        assert out["syn_loss"].ndim == 0
+        assert torch.isfinite(out["syn_loss"])
+
+    def test_real_loss_absent_when_batch_is_all_synthetic(self):
+        out = self.trainer.validation_step(self.model, _make_batch(b=4, num_real=0), 0)
+        assert "real_loss" not in out
+        assert "syn_loss" in out
+
+    def test_syn_loss_absent_when_batch_is_all_real(self):
+        out = self.trainer.validation_step(self.model, _make_batch(b=4, num_real=4), 0)
+        assert "syn_loss" not in out
+        assert "real_loss" in out
 
 
 class TestCreateOptimizer:
