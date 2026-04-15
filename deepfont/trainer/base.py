@@ -419,6 +419,43 @@ class BaseTrainer(ABC):
         else:
             scheduler.step()
 
+    def _build_optimizer(
+        self,
+        params: Any,
+        optimizer_type: str,
+        lr: float,
+        weight_decay: float,
+        optimizer_kwargs: dict,
+    ) -> Optimizer:
+        """Build an optimizer by name.
+
+        Args:
+            params: Iterable of parameters to optimise.
+            optimizer_type: One of "adam", "adamw", or "sgd".
+            lr: Learning rate.
+            weight_decay: L2 regularisation coefficient.
+            optimizer_kwargs: Extra keyword arguments forwarded to the
+                optimizer constructor (e.g. ``momentum`` for SGD,
+                ``betas`` / ``eps`` for Adam/AdamW).
+
+        Returns:
+            A configured :class:`torch.optim.Optimizer` instance.
+        """
+        registry: dict[str, type] = {
+            "adam": torch.optim.Adam,
+            "adamw": torch.optim.AdamW,
+            "sgd": torch.optim.SGD,
+        }
+
+        if optimizer_type not in registry:
+            raise ValueError(
+                f"Unknown optimizer_type '{optimizer_type}'. Valid options: {list(registry.keys())}"
+            )
+
+        return registry[optimizer_type](
+            params, lr=lr, weight_decay=weight_decay, **optimizer_kwargs
+        )
+
     def _build_scheduler(
         self,
         optimizer: Optimizer,

@@ -210,14 +210,26 @@ class TestValidationStep:
 
 
 class TestCreateOptimizer:
-    """create_optimizer() returns an Adam optimizer with the configured hyperparams."""
+    """create_optimizer() returns the configured optimizer with correct hyperparams."""
 
     def setup_method(self):
         self.model = DeepFontAE()
 
-    def test_returns_adam_optimizer(self):
+    def test_default_optimizer_is_sgd(self):
         optim, _ = _make_trainer().create_optimizer(self.model)
+        assert isinstance(optim, torch.optim.SGD)
+
+    def test_adam_optimizer_when_configured(self):
+        optim, _ = _make_trainer(
+            config_overrides={"optimizer_type": "adam"}
+        ).create_optimizer(self.model)
         assert isinstance(optim, torch.optim.Adam)
+
+    def test_adamw_optimizer_when_configured(self):
+        optim, _ = _make_trainer(
+            config_overrides={"optimizer_type": "adamw"}
+        ).create_optimizer(self.model)
+        assert isinstance(optim, torch.optim.AdamW)
 
     def test_learning_rate_matches_config(self):
         lr = 5e-4
@@ -232,6 +244,13 @@ class TestCreateOptimizer:
             self.model
         )
         assert optim.param_groups[0]["weight_decay"] == pytest.approx(wd)
+
+    def test_optimizer_kwargs_forwarded(self):
+        """Extra optimizer kwargs (e.g. momentum) are passed through to the optimizer."""
+        optim, _ = _make_trainer(
+            config_overrides={"optimizer_kwargs": {"momentum": 0.9}}
+        ).create_optimizer(self.model)
+        assert optim.param_groups[0]["momentum"] == pytest.approx(0.9)
 
     def test_no_scheduler_by_default(self):
         _, sched = _make_trainer().create_optimizer(self.model)

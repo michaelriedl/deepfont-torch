@@ -141,6 +141,53 @@ class TestShouldValidate:
             assert trainer._should_validate
 
 
+class TestBuildOptimizer:
+    """_build_optimizer creates the correct optimizer type from a string name."""
+
+    def _trainer_and_params(self, **config_overrides):
+        trainer = MinimalTrainer(_base_config(**config_overrides))
+        model = nn.Linear(4, 4)
+        return trainer, list(model.parameters())
+
+    def test_sgd_type(self):
+        trainer, params = self._trainer_and_params()
+        optim = trainer._build_optimizer(params, "sgd", lr=0.01, weight_decay=0.0, optimizer_kwargs={})
+        assert isinstance(optim, torch.optim.SGD)
+
+    def test_adam_type(self):
+        trainer, params = self._trainer_and_params()
+        optim = trainer._build_optimizer(params, "adam", lr=0.01, weight_decay=0.0, optimizer_kwargs={})
+        assert isinstance(optim, torch.optim.Adam)
+
+    def test_adamw_type(self):
+        trainer, params = self._trainer_and_params()
+        optim = trainer._build_optimizer(params, "adamw", lr=0.01, weight_decay=0.0, optimizer_kwargs={})
+        assert isinstance(optim, torch.optim.AdamW)
+
+    def test_lr_is_set(self):
+        trainer, params = self._trainer_and_params()
+        optim = trainer._build_optimizer(params, "sgd", lr=0.05, weight_decay=0.0, optimizer_kwargs={})
+        assert optim.param_groups[0]["lr"] == pytest.approx(0.05)
+
+    def test_weight_decay_is_set(self):
+        trainer, params = self._trainer_and_params()
+        optim = trainer._build_optimizer(params, "sgd", lr=0.01, weight_decay=1e-4, optimizer_kwargs={})
+        assert optim.param_groups[0]["weight_decay"] == pytest.approx(1e-4)
+
+    def test_optimizer_kwargs_forwarded(self):
+        """Extra kwargs (e.g. momentum) are forwarded to the optimizer constructor."""
+        trainer, params = self._trainer_and_params()
+        optim = trainer._build_optimizer(
+            params, "sgd", lr=0.01, weight_decay=0.0, optimizer_kwargs={"momentum": 0.9}
+        )
+        assert optim.param_groups[0]["momentum"] == pytest.approx(0.9)
+
+    def test_unknown_type_raises_value_error(self):
+        trainer, params = self._trainer_and_params()
+        with pytest.raises(ValueError, match="Unknown optimizer_type"):
+            trainer._build_optimizer(params, "rmsprop", lr=0.01, weight_decay=0.0, optimizer_kwargs={})
+
+
 class TestBuildScheduler:
     """_build_scheduler creates the correct scheduler type from a string name."""
 

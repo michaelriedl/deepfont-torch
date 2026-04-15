@@ -112,11 +112,13 @@ class PretrainTrainer(BaseTrainer):
         self,
         model: nn.Module,
     ) -> tuple[Optimizer, LRScheduler | None]:
-        """Return an Adam optimizer and an optional LR scheduler."""
-        optimizer = torch.optim.Adam(
+        """Return the configured optimizer and an optional LR scheduler."""
+        optimizer = self._build_optimizer(
             model.parameters(),
+            optimizer_type=self.config.optimizer_type,
             lr=self.config.learning_rate,
             weight_decay=self.config.weight_decay,
+            optimizer_kwargs=self.config.optimizer_kwargs,
         )
         scheduler = self._build_scheduler(
             optimizer,

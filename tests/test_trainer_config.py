@@ -15,7 +15,7 @@ Test classes:
 import pytest
 from pydantic import ValidationError
 
-from deepfont.trainer.config import TrainerConfig, FinetuneConfig, PretrainConfig
+from deepfont.trainer.config import TrainerConfig, FinetuneConfig, PretrainConfig, OptimizerType
 
 
 class TestTrainerConfigDefaults:
@@ -118,6 +118,12 @@ class TestPretrainConfigDefaults:
     def test_num_images_to_cache_default(self):
         assert PretrainConfig().num_images_to_cache == 0
 
+    def test_optimizer_type_default(self):
+        assert PretrainConfig().optimizer_type == "sgd"
+
+    def test_optimizer_kwargs_default(self):
+        assert PretrainConfig().optimizer_kwargs == {}
+
     def test_learning_rate_default(self):
         assert PretrainConfig().learning_rate == 1e-3
 
@@ -142,6 +148,12 @@ class TestFinetuneConfigDefaults:
 
     def test_encoder_weights_path_default(self):
         assert FinetuneConfig().encoder_weights_path is None
+
+    def test_optimizer_type_default(self):
+        assert FinetuneConfig().optimizer_type == "sgd"
+
+    def test_optimizer_kwargs_default(self):
+        assert FinetuneConfig().optimizer_kwargs == {}
 
     def test_learning_rate_default(self):
         assert FinetuneConfig().learning_rate == 1e-4
@@ -183,3 +195,21 @@ class TestConfigInheritance:
         b = PretrainConfig()
         a.scheduler_kwargs["key"] = "value"
         assert "key" not in b.scheduler_kwargs
+
+    def test_optimizer_kwargs_mutable_default_independence(self):
+        """Two separate PretrainConfig instances share no mutable optimizer_kwargs dict."""
+        a = PretrainConfig()
+        b = PretrainConfig()
+        a.optimizer_kwargs["momentum"] = 0.9
+        assert "momentum" not in b.optimizer_kwargs
+
+    def test_valid_optimizer_types_accepted(self):
+        """All three supported optimizer_type values are accepted by Pydantic."""
+        for opt_type in ("sgd", "adam", "adamw"):
+            config = PretrainConfig(optimizer_type=opt_type)
+            assert config.optimizer_type == opt_type
+
+    def test_invalid_optimizer_type_rejected(self):
+        """An unrecognized optimizer_type string is rejected by Pydantic validation."""
+        with pytest.raises(ValidationError):
+            PretrainConfig(optimizer_type="rmsprop")

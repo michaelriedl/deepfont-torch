@@ -128,16 +128,18 @@ class FinetuneTrainer(BaseTrainer):
         self,
         model: nn.Module,
     ) -> tuple[Optimizer, LRScheduler | None]:
-        """Return an Adam optimizer over trainable parameters only.
+        """Return the configured optimizer over trainable parameters only.
 
         Parameters with requires_grad=False (i.e. frozen encoder layers
         when encoder_weights_path is set) are excluded automatically.
         """
         trainable = [p for p in model.parameters() if p.requires_grad]
-        optimizer = torch.optim.Adam(
+        optimizer = self._build_optimizer(
             trainable,
+            optimizer_type=self.config.optimizer_type,
             lr=self.config.learning_rate,
             weight_decay=self.config.weight_decay,
+            optimizer_kwargs=self.config.optimizer_kwargs,
         )
         scheduler = self._build_scheduler(
             optimizer,
