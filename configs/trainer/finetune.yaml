@@ -14,8 +14,8 @@ num_workers: 4
 
 # Training loop
 max_epochs: 100
-batch_size: 64
-val_batch_size: 64
+batch_size: 128
+val_batch_size: 128
 train_ratio: 0.8
 grad_accum_steps: 1
 gradient_clip_val: null
@@ -45,15 +45,18 @@ encoder_weights_path: null
 
 # Optimizer
 optimizer_type: "sgd"  # "sgd" | "adam" | "adamw"
-learning_rate: 1e-4
-weight_decay: 0.0
-optimizer_kwargs: {}
-  # sgd examples:    momentum: 0.9  nesterov: true
-  # adam/adamw:      betas: [0.9, 0.999]  eps: 1.0e-8
+learning_rate: 0.01  # paper: "We start with the learning rate at 0.01"
+weight_decay: 0.0005  # paper: "weight decay of 0.0005"
+optimizer_kwargs:
+  momentum: 0.9  # paper: "momentum of 0.9"
+  # adam/adamw:  betas: [0.9, 0.999]  eps: 1.0e-8
 
 # LR Scheduler (optional)
-scheduler_type: null  # "cosine" | "step" | "reduce_on_plateau" | "linear"
-scheduler_kwargs: {}
+# Paper: "manually divide the learning rate by 10 when the validation error rate stops decreasing"
+scheduler_type: "reduce_on_plateau"
+scheduler_kwargs:
+  factor: 0.1   # divide by 10
+  patience: 5   # epochs to wait before reducing (paper does not specify)
 
 # Evaluation
 limit_eval_batches: null  # cap evaluation batches in evaluate(); null = use all
