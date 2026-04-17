@@ -257,13 +257,20 @@ class FinetuneTrainer(BaseTrainer):
         correct = 0
         total = 0
 
+        limit = self.config.limit_eval_batches
+        num_batches = len(eval_loader)
+        if limit is not None:
+            num_batches = min(num_batches, limit)
+
         with torch.no_grad():
             iterable = self._progbar(
                 eval_loader,
-                total=len(eval_loader),
+                total=num_batches,
                 desc="Evaluate [TTA]",
             )
-            for crops, labels in iterable:
+            for batch_idx, (crops, labels) in enumerate(iterable):
+                if limit is not None and batch_idx >= limit:
+                    break
                 # crops:  (B, N, 1, H, W)  — N augmented views per image
                 # labels: (B,)
                 b, n, c, h, w = crops.shape

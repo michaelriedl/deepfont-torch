@@ -54,3 +54,6 @@ optimizer_kwargs: {}
 # LR Scheduler (optional)
 scheduler_type: null  # "cosine" | "step" | "reduce_on_plateau" | "linear"
 scheduler_kwargs: {}
+
+# Evaluation
+limit_eval_batches: null  # cap evaluation batches in evaluate(); null = use all
