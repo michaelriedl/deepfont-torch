@@ -101,10 +101,9 @@ def main(cfg: DictConfig) -> None:
     if cfg.get("test", True):
         results = trainer.evaluate()
         logger.info(
-            "Test accuracy: %.4f (%d/%d)",
-            results["accuracy"],
-            results["correct"],
-            results["total"],
+            "Test top-1: %.4f (%d/%d)  |  Top-5: %.4f (%d/%d)",
+            results["top1_accuracy"], results["correct"], results["total"],
+            results["top5_accuracy"], results["top5_correct"], results["total"],
         )
 
 

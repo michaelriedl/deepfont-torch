@@ -5,6 +5,7 @@ data/*
 !data/*_examples/
 !data/README.md
 !data/fontlist.txt
+.checkpoints/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

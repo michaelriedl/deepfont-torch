@@ -81,6 +81,8 @@ class BaseTrainer(ABC):
         self.model: nn.Module | None = None
         self.optimizer: Optimizer | None = None
         self.scheduler: LRScheduler | None = None
+        # Set by ModelCheckpointCallback whenever a new best checkpoint is saved.
+        self.best_checkpoint_path: str | None = None
 
     # Abstract interface — subclasses must implement these
 

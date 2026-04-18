@@ -60,7 +60,7 @@ class FinetuneTrainer(BaseTrainer):
         self,
         config: FinetuneConfig,
         model_config: DeepFontConfig,
-        data_config: FinetuneDataConfig,
+        data_config: FinetuneDataConfig | None = None,
         eval_data_config: EvalDataConfig | None = None,
         loggers=None,
         callbacks=None,
@@ -94,7 +94,15 @@ class FinetuneTrainer(BaseTrainer):
 
         Returns:
             (train_loader, val_loader) ready for fit().
+
+        Raises:
+            ValueError: If data_config was not provided (eval-only usage).
         """
+        if self.data_config is None:
+            raise ValueError(
+                "data_config must be provided to call fit(). "
+                "Pass a FinetuneDataConfig or use evaluate() for inference only."
+            )
         dataset = FinetuneData(self.data_config)
         train_set, val_set = dataset.split_data_random(train_ratio=self.config.train_ratio)
 
@@ -230,6 +238,17 @@ class FinetuneTrainer(BaseTrainer):
                 "EvalDataConfig before calling evaluate()."
             )
 
+        # Resolve which checkpoint to load: explicit arg → best from training → warn and skip.
+        if ckpt_path is None and self.best_checkpoint_path is not None:
+            ckpt_path = self.best_checkpoint_path
+            logger.info("evaluate(): auto-using best checkpoint from training: %s", ckpt_path)
+        elif ckpt_path is None:
+            logger.warning(
+                "evaluate(): no checkpoint path provided and no best checkpoint recorded "
+                "from a prior fit() call. Evaluating with randomly initialized weights "
+                "(encoder weights only). Results will not reflect trained performance."
+            )
+
         self._ensure_launched()
 
         with self.fabric.init_module():
@@ -254,7 +273,8 @@ class FinetuneTrainer(BaseTrainer):
         eval_loader = self.fabric.setup_dataloaders(eval_loader)
 
         model.eval()
-        correct = 0
+        correct_top1 = 0
+        correct_top5 = 0
         total = 0
 
         limit = self.config.limit_eval_batches
@@ -280,15 +300,31 @@ class FinetuneTrainer(BaseTrainer):
 
                 # Average logits across crops then classify
                 avg_logits = logits.view(b, n, -1).mean(dim=1)  # (B, num_classes)
-                preds = avg_logits.argmax(dim=1)  # (B,)
 
-                correct += (preds == labels).sum().item()
+                top5 = avg_logits.topk(5, dim=1).indices  # (B, 5)
+                correct_top1 += (top5[:, 0] == labels).sum().item()
+                correct_top5 += (top5 == labels.unsqueeze(1)).any(dim=1).sum().item()
                 total += b
 
                 if isinstance(iterable, tqdm):
-                    iterable.set_postfix({"acc": f"{correct / total:.4f}"})
+                    iterable.set_postfix({
+                        "top1": f"{correct_top1 / total:.4f}",
+                        "top5": f"{correct_top5 / total:.4f}",
+                    })
 
-        accuracy = correct / total
+        top1 = correct_top1 / total
+        top5 = correct_top5 / total
         if self.fabric.is_global_zero:
-            logger.info("TTA Evaluation: accuracy=%.4f (%d/%d)", accuracy, correct, total)
-        return {"accuracy": accuracy, "correct": correct, "total": total}
+            logger.info(
+                "TTA Evaluation: top1=%.4f (%d/%d)  top5=%.4f (%d/%d)",
+                top1, correct_top1, total,
+                top5, correct_top5, total,
+            )
+        return {
+            "accuracy": top1,
+            "top1_accuracy": top1,
+            "top5_accuracy": top5,
+            "correct": correct_top1,
+            "top5_correct": correct_top5,
+            "total": total,
+        }
