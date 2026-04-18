@@ -381,10 +381,23 @@ class DeepFont(nn.Module):
             >>> model.load_encoder_weights('pretrained_ae.pt')
             >>> # Now train with frozen encoder weights
         """
-        # Load the weights
+        logger.info("Loading encoder weights from: %s", encoder_weights_file)
+
+        # Load the weights; unwrap Fabric/Lightning checkpoints which store the
+        # model state dict under a "model" key alongside optimizer, epoch, etc.
         state_dict = torch.load(encoder_weights_file, map_location=torch.device("cpu"))
+        if "model" in state_dict and isinstance(state_dict["model"], dict):
+            logger.info("Detected Fabric checkpoint — unwrapping 'model' key.")
+            state_dict = state_dict["model"]
+
         # Keep only the encoder part
         state_dict = {k.replace("encoder.", ""): v for k, v in state_dict.items() if "encoder" in k}
+        if not state_dict:
+            raise RuntimeError(
+                f"No encoder weights found in '{encoder_weights_file}'. "
+                "Expected keys containing 'encoder.' in the state dict."
+            )
+        logger.info("Found %d encoder tensor(s) in checkpoint.", len(state_dict))
 
         # Compute the layer index mapping between the source AE encoder and this
         # classifier's encoder.  Each encoder stage has a variable number of
@@ -405,15 +418,37 @@ class DeepFont(nn.Module):
                 if src_key in state_dict:
                     layer_map[src_key] = f"{dst_idx}.{suffix}"
 
+        if not layer_map:
+            raise RuntimeError(
+                "Could not map any encoder keys from the checkpoint to the model encoder. "
+                f"Checkpoint encoder keys: {list(state_dict.keys())}"
+            )
+
         new_state_dict = {}
         for src_key, dst_key in layer_map.items():
+            src_shape = state_dict[src_key].shape
+            dst_param = dict(self.encoder.named_parameters()).get(dst_key)
+            if dst_param is None:
+                raise RuntimeError(
+                    f"Destination key '{dst_key}' not found in encoder. "
+                    f"Cannot map checkpoint key '{src_key}'."
+                )
+            if src_shape != dst_param.shape:
+                raise RuntimeError(
+                    f"Shape mismatch for '{src_key}' → '{dst_key}': "
+                    f"checkpoint has {src_shape}, model expects {dst_param.shape}."
+                )
             new_state_dict[dst_key] = state_dict[src_key]
+            logger.info("  Matched: checkpoint '%s' → encoder '%s' %s", src_key, dst_key, src_shape)
 
         # Load the weights
         self.encoder.load_state_dict(new_state_dict, strict=False)
+        logger.info("Successfully loaded %d encoder weight tensor(s).", len(new_state_dict))
+
         # Freeze the loaded layers
+        frozen = []
         for param_name, param in self.encoder.named_parameters():
             if param_name in new_state_dict:
                 param.requires_grad_(False)
-                # Log the frozen layer
-                logger.info(f"Freezing layer: {param_name}")
+                frozen.append(param_name)
+        logger.info("Frozen %d encoder parameter(s): %s", len(frozen), frozen)

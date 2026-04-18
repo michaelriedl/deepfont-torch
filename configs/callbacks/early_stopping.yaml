@@ -5,7 +5,7 @@
 early_stopping:
   _target_: deepfont.callbacks.EarlyStoppingCallback
   monitor: val_loss
-  patience: 5
+  patience: 15
   min_delta: 0.0
   mode: min
   verbose: true

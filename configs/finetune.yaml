@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - data: finetune
-  - eval_data: eval
+  - data@eval_data: eval
   - model: deepfont
   - callbacks: default
   - logger: null # set logger here or use command line (e.g. `python finetune.py logger=tensorboard`)

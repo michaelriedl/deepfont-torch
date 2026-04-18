@@ -41,7 +41,7 @@ seed: 0
 num_images_to_cache: 0
 
 # Transfer learning
-encoder_weights_path: null
+encoder_weights_path: "${paths.root_dir}/.checkpoints/best_ae.ckpt"
 
 # Optimizer
 optimizer_type: "sgd"  # "sgd" | "adam" | "adamw"

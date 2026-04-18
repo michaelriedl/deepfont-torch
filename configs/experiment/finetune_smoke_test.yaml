@@ -5,7 +5,7 @@
 
 defaults:
   - override /data: finetune
-  - override /eval_data: eval
+  - override /data@eval_data: eval
   - override /model: deepfont
   - override /trainer: finetune
 
