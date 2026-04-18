@@ -307,18 +307,24 @@ class FinetuneTrainer(BaseTrainer):
                 total += b
 
                 if isinstance(iterable, tqdm):
-                    iterable.set_postfix({
-                        "top1": f"{correct_top1 / total:.4f}",
-                        "top5": f"{correct_top5 / total:.4f}",
-                    })
+                    iterable.set_postfix(
+                        {
+                            "top1": f"{correct_top1 / total:.4f}",
+                            "top5": f"{correct_top5 / total:.4f}",
+                        }
+                    )
 
         top1 = correct_top1 / total
         top5 = correct_top5 / total
         if self.fabric.is_global_zero:
             logger.info(
                 "TTA Evaluation: top1=%.4f (%d/%d)  top5=%.4f (%d/%d)",
-                top1, correct_top1, total,
-                top5, correct_top5, total,
+                top1,
+                correct_top1,
+                total,
+                top5,
+                correct_top5,
+                total,
             )
         return {
             "accuracy": top1,
