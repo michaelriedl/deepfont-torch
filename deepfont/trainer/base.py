@@ -432,16 +432,16 @@ class BaseTrainer(ABC):
         """Build an optimizer by name.
 
         Args:
-            params: Iterable of parameters to optimise.
+            params: Iterable of parameters to optimize.
             optimizer_type: One of "adam", "adamw", or "sgd".
             lr: Learning rate.
-            weight_decay: L2 regularisation coefficient.
+            weight_decay: L2 regularization coefficient.
             optimizer_kwargs: Extra keyword arguments forwarded to the
-                optimizer constructor (e.g. ``momentum`` for SGD,
-                ``betas`` / ``eps`` for Adam/AdamW).
+                optimizer constructor (e.g. momentum for SGD,
+                betas / eps for Adam/AdamW).
 
         Returns:
-            A configured :class:`torch.optim.Optimizer` instance.
+            A configured torch.optim.Optimizer instance.
         """
         registry: dict[str, type] = {
             "adam": torch.optim.Adam,
