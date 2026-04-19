@@ -34,3 +34,11 @@ trainer:
 
 train: true
 test: false
+
+# No real images in smoke test -- monitor combined val_loss instead of
+# val_real_loss (which won't be emitted when real_image_dir is null).
+callbacks:
+  model_checkpoint:
+    monitor: val_loss
+  early_stopping:
+    monitor: val_loss

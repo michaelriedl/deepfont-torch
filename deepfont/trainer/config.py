@@ -154,3 +154,10 @@ class FinetuneConfig(TrainerConfig):
         default=None,
     )
     scheduler_kwargs: dict = Field(default_factory=dict)
+
+    # Evaluation
+    limit_eval_batches: int | None = Field(
+        default=None,
+        ge=1,
+        description="Cap the number of evaluation batches in evaluate(). None = use all.",
+    )

@@ -28,4 +28,4 @@ use_conv_batch_norm: true
 
 # Fully-connected classification head
 fc_hidden_dims: [4096, 4096]
-dropout_rate: 0.1
+dropout_rate: 0.5

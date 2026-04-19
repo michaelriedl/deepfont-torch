@@ -174,21 +174,23 @@ class PretrainTrainer(BaseTrainer):
             batch_idx: Unused; present for interface compatibility.
 
         Returns:
-            Dict with "loss" (combined), and "real_loss" / "syn_loss" when the
-            batch contains at least one sample of that type.
+            Dict with "loss" (combined), "real_loss" / "syn_loss" when the batch
+            contains at least one sample of that type, and "rel_real_loss" /
+            "rel_syn_loss" as relative MSEs (normalized by signal energy) matching
+            the metric reported in the DeepFont paper Table 2.
         """
         images, is_real = batch
         reconstructed = model(images)
         out: dict[str, torch.Tensor] = {"loss": self._reconstruction_loss(reconstructed, images)}
         real_mask = is_real.bool()
         if real_mask.any():
-            out["real_loss"] = self._reconstruction_loss(
-                reconstructed[real_mask], images[real_mask]
-            )
+            real_imgs = images[real_mask]
+            out["real_loss"] = self._reconstruction_loss(reconstructed[real_mask], real_imgs)
+            out["rel_real_loss"] = out["real_loss"] / real_imgs.pow(2).mean().clamp(min=1e-8)
         if (~real_mask).any():
-            out["syn_loss"] = self._reconstruction_loss(
-                reconstructed[~real_mask], images[~real_mask]
-            )
+            syn_imgs = images[~real_mask]
+            out["syn_loss"] = self._reconstruction_loss(reconstructed[~real_mask], syn_imgs)
+            out["rel_syn_loss"] = out["syn_loss"] / syn_imgs.pow(2).mean().clamp(min=1e-8)
         return out
 
     # Extra utility

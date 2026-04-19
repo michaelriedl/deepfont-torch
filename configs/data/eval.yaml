@@ -1,0 +1,10 @@
+# Configuration for EvalDataConfig.
+# Data source for TTA evaluation using the real test images (VFR_real_test).
+
+_target_: deepfont.data.config.EvalDataConfig
+
+synthetic_bcf_file: "${paths.data_dir}deepfont_data/BCF format/VFR_real_test/vfr_large.bcf"
+label_file: "${paths.data_dir}deepfont_data/BCF format/VFR_real_test/vfr_large.label"
+image_normalization: "0to1" # "0to1" or "-1to1"
+num_image_crops: 15
+# manifest_file: null  # path to parquet manifest; null = scan files at runtime

@@ -2,3 +2,11 @@ defaults:
   - default
   - reconstruction_visualizer
   - _self_
+
+# Monitor real-image reconstruction loss for checkpoint selection and early
+# stopping -- the paper evaluates domain adaptation quality on real images.
+model_checkpoint:
+  monitor: val_real_loss
+
+early_stopping:
+  monitor: val_real_loss

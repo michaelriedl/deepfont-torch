@@ -140,6 +140,7 @@ class ModelCheckpointCallback:
             save_state["scheduler"] = trainer.scheduler
 
         trainer.fabric.save(path, save_state)
+        trainer.best_checkpoint_path = path
 
         if self.verbose:
             logger.info(

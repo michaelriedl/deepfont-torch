@@ -5,6 +5,7 @@
 defaults:
   - _self_
   - data: finetune
+  - data@eval_data: eval
   - model: deepfont
   - callbacks: default
   - logger: null # set logger here or use command line (e.g. `python finetune.py logger=tensorboard`)
@@ -30,6 +31,9 @@ tags: ["default_finetune"]
 
 # set False to skip model training
 train: True
+
+# set True to run TTA evaluation on the real test set after training
+test: True
 
 # simply provide checkpoint path to resume training
 ckpt_path: null
