@@ -18,7 +18,7 @@ Hydra integration:
         from deepfont.callbacks.config_store import register_callback_configs
         register_callback_configs()
 
-    See :mod:`deepfont.callbacks.config_store` for details.
+    See deepfont.callbacks.config_store for details.
 """
 
 from .lr_monitor import LearningRateMonitorCallback, LearningRateMonitorCallbackConfig

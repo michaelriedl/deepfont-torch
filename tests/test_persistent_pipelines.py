@@ -10,7 +10,7 @@ Test classes:
     TestSyntheticAugmentationPipeline  -- output shape/dtype, aug_prob property
     TestRealAugmentationPipeline       -- output shape/dtype, aug_prob property
     TestEvalAugmentationPipeline       -- output shape, stochasticity
-    TestDatasetAugProbProperty         -- property behaviour on PretrainData and FinetuneData
+    TestDatasetAugProbProperty         -- property behavior on PretrainData and FinetuneData
 """
 
 import copy
@@ -32,9 +32,7 @@ from deepfont.data.config import FinetuneDataConfig, PretrainDataConfig
 from deepfont.data.datasets import FinetuneData, PretrainData
 
 
-# ---------------------------------------------------------------------------
 # Shared fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -97,9 +95,7 @@ def finetune_dataset(tmp_path):
     return FinetuneData(config)
 
 
-# ---------------------------------------------------------------------------
 # SyntheticAugmentationPipeline
-# ---------------------------------------------------------------------------
 
 
 class TestSyntheticAugmentationPipeline:
@@ -156,9 +152,7 @@ class TestSyntheticAugmentationPipeline:
         assert pipeline(wide_image).shape == (IMAGE_SIZE, IMAGE_SIZE)
 
 
-# ---------------------------------------------------------------------------
 # RealAugmentationPipeline
-# ---------------------------------------------------------------------------
 
 
 class TestRealAugmentationPipeline:
@@ -202,9 +196,7 @@ class TestRealAugmentationPipeline:
         )
 
 
-# ---------------------------------------------------------------------------
 # EvalAugmentationPipeline
-# ---------------------------------------------------------------------------
 
 
 class TestEvalAugmentationPipeline:
@@ -237,9 +229,7 @@ class TestEvalAugmentationPipeline:
             assert result.shape == (4, IMAGE_SIZE, IMAGE_SIZE)
 
 
-# ---------------------------------------------------------------------------
 # Dataset aug_prob property
-# ---------------------------------------------------------------------------
 
 
 class TestDatasetAugProbProperty:
