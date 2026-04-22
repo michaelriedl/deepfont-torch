@@ -12,76 +12,69 @@ IMAGE_SIZE = 105
 SQUEEZE_RATIO = 1 / 2.5
 SCALE_LIMIT = 0.15
 EVAL_SCALE_LIMIT = 0.4
-ROTATE_BOUNDS = (-45, 45)
-SHEAR_BOUNDS = (-15, 15)
+ROTATE_BOUNDS = (-3, 3)
+SHEAR_BOUNDS = (-3, 3)
 BLUR_LIMIT = (2.5, 3.5)
 NOISE_MEAN_RANGE = (0.0, 0.0)
-NOISE_STD_RANGE = (0.05, 0.15)
+NOISE_STD_RANGE = (0.008, 0.016)
 ROT_FLIP_PROB = 0.5
+INVERT_PROB = 0.5
+GRADIENT_FG_RANGE = (140, 220)
+GRADIENT_BG_RANGE = (20, 100)
+GRADIENT_A_RANGE = (0.4, 0.6)
 
 
 def add_grayscale_gradient(
-    image: np.ndarray, gradient_min: tuple = (20, 100), gradient_max: tuple = (140, 220)
+    image: np.ndarray,
+    fg_range: tuple = GRADIENT_FG_RANGE,
+    bg_range: tuple = GRADIENT_BG_RANGE,
+    a_range: tuple = GRADIENT_A_RANGE,
 ) -> np.ndarray:
-    """Adds a random linear gradient overlay to a grayscale image.
+    """Applies directional gradient shading that faithfully replicates affine2d.apply2.
 
-    This function generates a 2D linear gradient in a random direction and subtracts
-    it from the input image to simulate lighting variations. The gradient direction is
-    determined by a random 2D vector, and its intensity range is randomly sampled from
-    the specified bounds. This augmentation helps models become more robust to varying
-    lighting conditions and background gradients.
+    The legacy DeepFont C extension (affine2d.so) applies gradient shading in two steps:
+      1. Intensity remap: pixel values are linearly mapped from [0, 255] → [bg, fg],
+         so dark pixels get the background tone and bright pixels get the foreground tone.
+      2. Multiplicative spatial gradient: a linear scale centered on the image is applied
+         in a random direction θ, with amplitude controlled by `a`.
 
-    The gradient is normalized to [0, 1] and then scaled to the range [gradient_min, gradient_max]
-    before being subtracted from the image. The result is clipped to [0, 255] to ensure
-    valid pixel values.
+    Combined formula per pixel at (col, row):
+        normalized = pixel * (fg - bg) / 255 + bg
+        grad_pos   = (col - w/2) * cos(θ) + (row - h/2) * sin(θ)
+        scale      = 1.0 + a * grad_pos / min(h, w)
+        output     = normalized * scale
 
     Args:
         image: A 2D NumPy array representing a grayscale image with values in [0, 255].
             The array dtype will be preserved in the output.
-        gradient_min: A tuple of two floats (min_bound, max_bound) defining the range
-            from which the minimum gradient intensity is randomly sampled. Default is
-            (20, 100), meaning the gradient minimum will be between 20 and 100.
-        gradient_max: A tuple of two floats (min_bound, max_bound) defining the range
-            from which the maximum gradient intensity is randomly sampled. Default is
-            (140, 220), meaning the gradient maximum will be between 140 and 220.
+        fg_range: (min, max) for the foreground (bright) intensity level.
+            Default matches the legacy code: (140, 220).
+        bg_range: (min, max) for the background (dark) intensity level.
+            Default matches the legacy code: (20, 100).
+        a_range: (min, max) for the gradient amplitude factor.
+            Default matches the legacy code: (0.4, 0.6).
 
     Returns:
-        A 2D NumPy array of the same shape and dtype as the input, representing the
-        image with the gradient overlay applied.
-
-    Note:
-        The gradient is subtracted from the image, so higher gradient values result in
-        darker regions. The final result is clipped to ensure valid pixel values.
+        A 2D NumPy array of the same shape and dtype as the input, with gradient
+        shading applied and pixel values clipped to [0, 255].
     """
-    # Store the original image dtype
     original_dtype = image.dtype
-    # Convert the image to a float
-    image = image.astype(float)
-    # Draw a random 2D vector
-    random_vector = np.random.randn(2, 1)
-    # Create the x,y grid for the image
-    x = np.linspace(0, 1, image.shape[1])
-    y = np.linspace(0, 1, image.shape[0])
-    x, y = np.meshgrid(x, y)
-    # Create the gradient image
-    gradient_image = np.dot(random_vector.T, np.array([x.flatten(), y.flatten()])).reshape(
-        image.shape
-    ) / np.linalg.norm(random_vector)
-    # Normalize the gradient image
-    gradient_image = (gradient_image - np.min(gradient_image)) / (
-        np.max(gradient_image) - np.min(gradient_image)
-    )
-    # Choose a random value for the gradient bounds
-    gradient_min = np.random.uniform(gradient_min[0], gradient_min[1])
-    gradient_max = np.random.uniform(gradient_max[0], gradient_max[1])
-    # Scale the gradient image
-    gradient_image = gradient_min + (gradient_max - gradient_min) * gradient_image
-    # Add the gradient to the image
-    image = image - gradient_image
-    # Clip the image and convert it back to the original dtype
-    image = np.clip(image, 0, 255).astype(original_dtype)
+    h, w = image.shape[:2]
 
-    return image
+    fg = np.random.uniform(fg_range[0], fg_range[1])
+    bg = np.random.uniform(bg_range[0], bg_range[1])
+    theta = np.random.uniform(0, 2 * np.pi)
+    a = np.random.uniform(a_range[0], a_range[1])
+
+    normalized = image.astype(float) * (fg - bg) / 255.0 + bg
+
+    cols = np.arange(w) - w / 2.0
+    rows = np.arange(h) - h / 2.0
+    col_grid, row_grid = np.meshgrid(cols, rows)
+    projection = col_grid * np.cos(theta) + row_grid * np.sin(theta)
+    scale = 1.0 + a * projection / min(h, w)
+
+    return np.clip(normalized * scale, 0, 255).astype(original_dtype)
 
 
 class RandomWidthScale(RandomScale):
@@ -213,7 +206,7 @@ class SyntheticAugmentationPipeline:
             [
                 ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
                 RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
-                A.InvertImg(p=aug_prob),
+                A.InvertImg(p=INVERT_PROB),
                 A.Affine(
                     rotate=ROTATE_BOUNDS,
                     shear=SHEAR_BOUNDS,
@@ -240,9 +233,10 @@ class SyntheticAugmentationPipeline:
         self._compose = self._build(value)
 
     def __call__(self, image: np.ndarray) -> np.ndarray:
+        image = self._compose(image=image)["image"]
         if np.random.rand() < self._aug_prob:
             image = add_grayscale_gradient(image)
-        return self._compose(image=image)["image"]
+        return image
 
 
 class RealAugmentationPipeline:
@@ -265,7 +259,7 @@ class RealAugmentationPipeline:
             [
                 ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
                 RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
-                A.InvertImg(p=aug_prob),
+                A.InvertImg(p=INVERT_PROB),
                 A.Affine(
                     rotate=ROTATE_BOUNDS,
                     shear=SHEAR_BOUNDS,
