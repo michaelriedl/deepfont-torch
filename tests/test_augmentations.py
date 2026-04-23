@@ -39,7 +39,6 @@ from deepfont.data.augmentations import (
     ROTATE_BOUNDS,
     SQUEEZE_RATIO,
     NOISE_STD_RANGE,
-    EVAL_SCALE_LIMIT,
     NOISE_MEAN_RANGE,
     GRADIENT_FG_RANGE,
     GRADIENT_BG_RANGE,
@@ -93,10 +92,7 @@ class TestConstants:
         assert SQUEEZE_RATIO == pytest.approx(1 / 2.5)
 
     def test_scale_limit(self):
-        assert SCALE_LIMIT == pytest.approx(0.15)
-
-    def test_eval_scale_limit(self):
-        assert EVAL_SCALE_LIMIT == pytest.approx(0.4)
+        assert SCALE_LIMIT == pytest.approx(0.4)
 
     def test_rotate_bounds(self):
         assert ROTATE_BOUNDS == (-3, 3)

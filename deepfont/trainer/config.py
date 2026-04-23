@@ -62,6 +62,12 @@ class TrainerConfig(BaseModel):
     # Reproducibility
     seed: int | None = Field(default=None)
 
+    # LR Scheduler monitor (used by ReduceLROnPlateau in BaseTrainer._step_scheduler)
+    scheduler_monitor: str = Field(
+        default="val_loss",
+        description="Metric name passed to ReduceLROnPlateau.step().",
+    )
+
     @field_validator("max_epochs", mode="after")
     @classmethod
     def _max_epochs_positive_if_set(cls, v: int | None) -> int | None:

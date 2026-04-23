@@ -10,8 +10,7 @@ from albumentations.augmentations.geometric.functional import resize
 
 IMAGE_SIZE = 105
 SQUEEZE_RATIO = 1 / 2.5
-SCALE_LIMIT = 0.15
-EVAL_SCALE_LIMIT = 0.4
+SCALE_LIMIT = 0.4
 ROTATE_BOUNDS = (-3, 3)
 SHEAR_BOUNDS = (-3, 3)
 BLUR_LIMIT = (2.5, 3.5)
@@ -303,7 +302,7 @@ class EvalAugmentationPipeline:
         self._compose = A.Compose(
             [
                 ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
-                RandomWidthScale(scale_limit=EVAL_SCALE_LIMIT, p=1.0),
+                RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
                 A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
             ]
         )

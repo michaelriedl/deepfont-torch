@@ -1,0 +1,13 @@
+defaults:
+  - default
+  - _self_
+
+# Monitor classification accuracy for checkpoint selection and early stopping.
+model_checkpoint:
+  monitor: val_acc
+  mode: max
+
+early_stopping:
+  monitor: val_acc
+  mode: max
+  patience: 30
