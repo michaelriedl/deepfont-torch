@@ -101,7 +101,7 @@ class TestConstants:
         assert SHEAR_BOUNDS == (-3, 3)
 
     def test_blur_limit(self):
-        assert BLUR_LIMIT == (2.5, 3.5)
+        assert BLUR_LIMIT == (0.5, 1.0)
 
     def test_noise_mean_range(self):
         assert NOISE_MEAN_RANGE == (0.0, 0.0)
