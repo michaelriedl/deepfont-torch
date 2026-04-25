@@ -260,6 +260,8 @@ class FinetuneTrainer(BaseTrainer):
         if ckpt_path is not None:
             state: dict = {"model": model}
             self.fabric.load(ckpt_path, state)
+            if self.fabric.is_global_zero:
+                logger.info("Loaded checkpoint: %s", ckpt_path)
 
         eval_dataset = EvalData(self.eval_data_config)
         eval_loader = DataLoader(

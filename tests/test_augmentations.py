@@ -39,8 +39,10 @@ from deepfont.data.augmentations import (
     ROTATE_BOUNDS,
     SQUEEZE_RATIO,
     NOISE_STD_RANGE,
-    EVAL_SCALE_LIMIT,
     NOISE_MEAN_RANGE,
+    GRADIENT_FG_RANGE,
+    GRADIENT_BG_RANGE,
+    GRADIENT_A_RANGE,
     RandomWidthScale,
     ResizeHeightSqueezeWidth,
     eval_pipeline,
@@ -90,28 +92,34 @@ class TestConstants:
         assert SQUEEZE_RATIO == pytest.approx(1 / 2.5)
 
     def test_scale_limit(self):
-        assert SCALE_LIMIT == pytest.approx(0.15)
-
-    def test_eval_scale_limit(self):
-        assert EVAL_SCALE_LIMIT == pytest.approx(0.4)
+        assert SCALE_LIMIT == pytest.approx(0.4)
 
     def test_rotate_bounds(self):
-        assert ROTATE_BOUNDS == (-45, 45)
+        assert ROTATE_BOUNDS == (-3, 3)
 
     def test_shear_bounds(self):
-        assert SHEAR_BOUNDS == (-15, 15)
+        assert SHEAR_BOUNDS == (-3, 3)
 
     def test_blur_limit(self):
-        assert BLUR_LIMIT == (2.5, 3.5)
+        assert BLUR_LIMIT == (0.5, 1.0)
 
     def test_noise_mean_range(self):
         assert NOISE_MEAN_RANGE == (0.0, 0.0)
 
     def test_noise_std_range(self):
-        assert NOISE_STD_RANGE == (0.05, 0.15)
+        assert NOISE_STD_RANGE == (0.008, 0.016)
 
     def test_rot_flip_prob(self):
         assert ROT_FLIP_PROB == pytest.approx(0.5)
+
+    def test_gradient_fg_range(self):
+        assert GRADIENT_FG_RANGE == (140, 220)
+
+    def test_gradient_bg_range(self):
+        assert GRADIENT_BG_RANGE == (20, 100)
+
+    def test_gradient_a_range(self):
+        assert GRADIENT_A_RANGE == (0.4, 0.6)
 
 
 # add_grayscale_gradient
@@ -144,8 +152,8 @@ class TestAddGrayscaleGradient:
         result = add_grayscale_gradient(bright)
         assert not np.array_equal(result, bright)
 
-    def test_custom_gradient_bounds_produces_valid_output(self, wide_image):
-        result = add_grayscale_gradient(wide_image, gradient_min=(0, 10), gradient_max=(10, 20))
+    def test_custom_a_range_produces_valid_output(self, wide_image):
+        result = add_grayscale_gradient(wide_image, a_range=(0.1, 0.2))
         assert result.shape == wide_image.shape
         assert result.dtype == wide_image.dtype
         assert int(result.min()) >= 0

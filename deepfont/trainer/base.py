@@ -415,7 +415,7 @@ class BaseTrainer(ABC):
         if scheduler is None:
             return
         if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-            monitor = val_metrics.get("val_loss")
+            monitor = val_metrics.get(self.config.scheduler_monitor)
             if monitor is not None:
                 scheduler.step(monitor.item())
         else:

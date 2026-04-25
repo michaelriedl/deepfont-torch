@@ -79,6 +79,7 @@ class PretrainTrainer(BaseTrainer):
         """
         dataset = PretrainData(self.data_config)
         train_set, val_set = dataset.split_data_random(train_ratio=self.config.train_ratio)
+        val_set.aug_prob = 0.0
 
         # Balance real ↔ synthetic in the training split
         if self.config.upsample_real_images:

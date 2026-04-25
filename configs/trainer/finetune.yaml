@@ -54,9 +54,11 @@ optimizer_kwargs:
 # LR Scheduler (optional)
 # Paper: "manually divide the learning rate by 10 when the validation error rate stops decreasing"
 scheduler_type: "reduce_on_plateau"
+scheduler_monitor: "val_acc"  # match callbacks
 scheduler_kwargs:
   factor: 0.1   # divide by 10
-  patience: 5   # epochs to wait before reducing (paper does not specify)
+  patience: 10  # epochs to wait before reducing
+  mode: "max"   # val_acc: higher is better
 
 # Evaluation
 limit_eval_batches: null  # cap evaluation batches in evaluate(); null = use all
