@@ -39,10 +39,10 @@ from deepfont.data.augmentations import (
     ROTATE_BOUNDS,
     SQUEEZE_RATIO,
     NOISE_STD_RANGE,
-    NOISE_MEAN_RANGE,
-    GRADIENT_FG_RANGE,
-    GRADIENT_BG_RANGE,
     GRADIENT_A_RANGE,
+    NOISE_MEAN_RANGE,
+    GRADIENT_BG_RANGE,
+    GRADIENT_FG_RANGE,
     RandomWidthScale,
     ResizeHeightSqueezeWidth,
     eval_pipeline,
@@ -267,18 +267,18 @@ class TestAugmentationPipelineDispatch:
 
     def test_raises_value_error_for_unknown_image_type(self, wide_image):
         with pytest.raises(ValueError, match="synthetic.*real"):
-            augmentation_pipeline(wide_image, "unknown", aug_prob=1.0)
+            augmentation_pipeline(wide_image, "unknown")
 
     def test_raises_value_error_for_empty_string_type(self, wide_image):
         with pytest.raises(ValueError):
-            augmentation_pipeline(wide_image, "", aug_prob=1.0)
+            augmentation_pipeline(wide_image, "")
 
     def test_synthetic_type_returns_correct_shape(self, wide_image):
-        result = augmentation_pipeline(wide_image, "synthetic", aug_prob=1.0)
+        result = augmentation_pipeline(wide_image, "synthetic")
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
 
     def test_real_type_returns_correct_shape(self, wide_image):
-        result = augmentation_pipeline(wide_image, "real", aug_prob=1.0)
+        result = augmentation_pipeline(wide_image, "real")
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
 
 
@@ -288,17 +288,16 @@ class TestAugmentationPipelineDispatch:
 class TestSyntheticPipeline:
     """End to end tests for the synthetic image augmentation pipeline."""
 
-    @pytest.mark.parametrize("aug_prob", [0.0, 0.5, 1.0])
-    def test_output_shape(self, wide_image, aug_prob):
-        result = augmentation_pipeline(wide_image, "synthetic", aug_prob=aug_prob)
+    def test_output_shape(self, wide_image):
+        result = augmentation_pipeline(wide_image, "synthetic")
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
 
     def test_output_dtype_is_uint8(self, wide_image):
-        result = augmentation_pipeline(wide_image, "synthetic", aug_prob=1.0)
+        result = augmentation_pipeline(wide_image, "synthetic")
         assert result.dtype == np.uint8
 
     def test_output_values_in_valid_range(self, wide_image):
-        result = augmentation_pipeline(wide_image, "synthetic", aug_prob=1.0)
+        result = augmentation_pipeline(wide_image, "synthetic")
         assert int(result.min()) >= 0
         assert int(result.max()) <= 255
 
@@ -308,13 +307,8 @@ class TestSyntheticPipeline:
     )
     def test_works_with_various_input_shapes(self, shape):
         img = np.random.default_rng(0).integers(0, 256, size=shape, dtype=np.uint8)
-        result = augmentation_pipeline(img, "synthetic", aug_prob=0.0)
+        result = augmentation_pipeline(img, "synthetic")
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE), f"Failed for input shape {shape}"
-
-    def test_zero_aug_prob_still_produces_correct_shape(self, wide_image):
-        # aug_prob=0 disables stochastic transforms; only p=1.0 steps run.
-        result = augmentation_pipeline(wide_image, "synthetic", aug_prob=0.0)
-        assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
 
 
 # Real pipeline
@@ -323,17 +317,16 @@ class TestSyntheticPipeline:
 class TestRealPipeline:
     """End to end tests for the real image augmentation pipeline."""
 
-    @pytest.mark.parametrize("aug_prob", [0.0, 0.5, 1.0])
-    def test_output_shape(self, wide_image, aug_prob):
-        result = augmentation_pipeline(wide_image, "real", aug_prob=aug_prob)
+    def test_output_shape(self, wide_image):
+        result = augmentation_pipeline(wide_image, "real")
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
 
     def test_output_dtype_is_uint8(self, wide_image):
-        result = augmentation_pipeline(wide_image, "real", aug_prob=1.0)
+        result = augmentation_pipeline(wide_image, "real")
         assert result.dtype == np.uint8
 
     def test_output_values_in_valid_range(self, wide_image):
-        result = augmentation_pipeline(wide_image, "real", aug_prob=1.0)
+        result = augmentation_pipeline(wide_image, "real")
         assert int(result.min()) >= 0
         assert int(result.max()) <= 255
 
@@ -343,12 +336,8 @@ class TestRealPipeline:
     )
     def test_works_with_various_input_shapes(self, shape):
         img = np.random.default_rng(0).integers(0, 256, size=shape, dtype=np.uint8)
-        result = augmentation_pipeline(img, "real", aug_prob=0.0)
+        result = augmentation_pipeline(img, "real")
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE), f"Failed for input shape {shape}"
-
-    def test_zero_aug_prob_still_produces_correct_shape(self, wide_image):
-        result = augmentation_pipeline(wide_image, "real", aug_prob=0.0)
-        assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
 
 
 # Eval pipeline

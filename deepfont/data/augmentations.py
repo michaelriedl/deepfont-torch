@@ -19,20 +19,43 @@ NOISE_MEAN_RANGE = (0.0, 0.0)
 NOISE_STD_RANGE = (0.008, 0.016)
 ROT_FLIP_PROB = 0.5
 INVERT_PROB = 0.5
+AFFINE_PROB = 1.0
+BLUR_PROB = 1.0
+BRIGHTNESS_CONTRAST_PROB = 1.0
+NOISE_PROB = 1.0
+GRADIENT_PROB = 1.0
 GRADIENT_FG_RANGE = (140, 220)
 GRADIENT_BG_RANGE = (20, 100)
 GRADIENT_A_RANGE = (0.4, 0.6)
 
 
-class SyntheticAugmentationConfig(BaseModel):
+class _AugmentationConfigBase(BaseModel):
+    """Common helpers for augmentation configs.
+
+    Provides ``with_stochastic_disabled`` so callers can derive a copy with
+    every probability field zeroed (used by validation splits to disable
+    stochastic augmentation without rebuilding the dataset).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    def with_stochastic_disabled(self):
+        """Return a copy of this config with every *_prob field set to 0.
+
+        The base ``model_copy`` keeps non-probability fields (image size,
+        scale limits, etc.) unchanged.
+        """
+        updates = {name: 0.0 for name in self.__class__.model_fields if name.endswith("_prob")}
+        return self.model_copy(update=updates)
+
+
+class SyntheticAugmentationConfig(_AugmentationConfigBase):
     """Hyperparameters for the synthetic-image augmentation pipeline.
 
     Mirrors the kwargs of SyntheticAugmentationPipeline so the same values
     can be supplied via Hydra configs and validated by pydantic. Defaults
     match the module-level constants in this module.
     """
-
-    model_config = ConfigDict(frozen=True)
 
     image_size: int = Field(
         default=IMAGE_SIZE,
@@ -81,6 +104,36 @@ class SyntheticAugmentationConfig(BaseModel):
         le=1.0,
         description="Probability for InvertImg.",
     )
+    affine_prob: float = Field(
+        default=AFFINE_PROB,
+        ge=0.0,
+        le=1.0,
+        description="Probability for the Affine (rotate + shear) step.",
+    )
+    blur_prob: float = Field(
+        default=BLUR_PROB,
+        ge=0.0,
+        le=1.0,
+        description="Probability for GaussianBlur.",
+    )
+    brightness_contrast_prob: float = Field(
+        default=BRIGHTNESS_CONTRAST_PROB,
+        ge=0.0,
+        le=1.0,
+        description="Probability for RandomBrightnessContrast.",
+    )
+    noise_prob: float = Field(
+        default=NOISE_PROB,
+        ge=0.0,
+        le=1.0,
+        description="Probability for GaussNoise.",
+    )
+    gradient_prob: float = Field(
+        default=GRADIENT_PROB,
+        ge=0.0,
+        le=1.0,
+        description="Probability for the grayscale gradient overlay applied in __call__.",
+    )
     gradient_fg_range: tuple[float, float] = Field(
         default=GRADIENT_FG_RANGE,
         description="(min, max) foreground intensity for the gradient overlay.",
@@ -95,14 +148,12 @@ class SyntheticAugmentationConfig(BaseModel):
     )
 
 
-class RealAugmentationConfig(BaseModel):
+class RealAugmentationConfig(_AugmentationConfigBase):
     """Hyperparameters for the real-image augmentation pipeline.
 
     Mirrors the kwargs of RealAugmentationPipeline. Defaults match the
     module-level constants in this module.
     """
-
-    model_config = ConfigDict(frozen=True)
 
     image_size: int = Field(
         default=IMAGE_SIZE,
@@ -139,16 +190,26 @@ class RealAugmentationConfig(BaseModel):
         le=1.0,
         description="Probability for InvertImg.",
     )
+    affine_prob: float = Field(
+        default=AFFINE_PROB,
+        ge=0.0,
+        le=1.0,
+        description="Probability for the Affine (rotate + shear) step.",
+    )
+    brightness_contrast_prob: float = Field(
+        default=BRIGHTNESS_CONTRAST_PROB,
+        ge=0.0,
+        le=1.0,
+        description="Probability for RandomBrightnessContrast.",
+    )
 
 
-class EvalAugmentationConfig(BaseModel):
+class EvalAugmentationConfig(_AugmentationConfigBase):
     """Hyperparameters for the eval (TTA) augmentation pipeline.
 
-    Mirrors the kwargs of EvalAugmentationPipeline. Defaults match the
-    module-level constants in this module.
+    Mirrors the kwargs of EvalAugmentationPipeline. All transforms run with
+    p=1.0, so this config only contains the geometric parameters.
     """
-
-    model_config = ConfigDict(frozen=True)
 
     image_size: int = Field(
         default=IMAGE_SIZE,
@@ -329,30 +390,23 @@ class SyntheticAugmentationPipeline:
     compiled pipeline on every ``__call__``, giving a 4-7x speedup when the
     same pipeline is applied to many images (e.g. inside a Dataset).
 
-    The ``aug_prob`` property supports mutation after construction: assigning a
-    new value rebuilds ``self._compose`` with the updated probabilities.  This
-    is used by ``FinetuneData`` and ``PretrainData`` to disable augmentation
-    for validation splits (``val_set.aug_prob = 0.0``) without creating a
-    whole new dataset object.
+    Per-augmentation probabilities live on the config object. Assigning a new
+    config (e.g. via ``pipeline.config = pipeline.config.with_stochastic_disabled()``)
+    rebuilds the underlying Compose so validation splits can disable
+    stochastic augmentation without rebuilding the dataset.
 
     Args:
-        aug_prob: Probability (0.0-1.0) of applying each stochastic transform.
         config: Hyperparameters for the transform list. When None, a default
             SyntheticAugmentationConfig is used (matching the module-level
             constants).
     """
 
-    def __init__(
-        self,
-        aug_prob: float,
-        config: SyntheticAugmentationConfig | None = None,
-    ) -> None:
-        self._aug_prob = aug_prob
-        self.config = config if config is not None else SyntheticAugmentationConfig()
-        self._compose = self._build(aug_prob)
+    def __init__(self, config: SyntheticAugmentationConfig | None = None) -> None:
+        self._config = config if config is not None else SyntheticAugmentationConfig()
+        self._compose = self._build()
 
-    def _build(self, aug_prob: float) -> A.Compose:
-        cfg = self.config
+    def _build(self) -> A.Compose:
+        cfg = self._config
         return A.Compose(
             [
                 ResizeHeightSqueezeWidth(cfg.image_size, cfg.squeeze_ratio, p=1.0),
@@ -362,15 +416,15 @@ class SyntheticAugmentationPipeline:
                     rotate=cfg.rotate_bounds,
                     shear=cfg.shear_bounds,
                     border_mode=cv2.BORDER_REFLECT,
-                    p=aug_prob,
+                    p=cfg.affine_prob,
                 ),
                 A.RandomCrop(cfg.image_size, cfg.image_size, p=1.0),
-                A.GaussianBlur(blur_limit=0, sigma_limit=cfg.blur_limit, p=aug_prob),
-                A.RandomBrightnessContrast(p=aug_prob),
+                A.GaussianBlur(blur_limit=0, sigma_limit=cfg.blur_limit, p=cfg.blur_prob),
+                A.RandomBrightnessContrast(p=cfg.brightness_contrast_prob),
                 A.GaussNoise(
                     std_range=cfg.noise_std_range,
                     mean_range=cfg.noise_mean_range,
-                    p=aug_prob,
+                    p=cfg.noise_prob,
                 ),
                 A.RandomRotate90(p=cfg.rot_flip_prob),
                 A.HorizontalFlip(p=cfg.rot_flip_prob),
@@ -379,22 +433,22 @@ class SyntheticAugmentationPipeline:
         )
 
     @property
-    def aug_prob(self) -> float:
-        return self._aug_prob
+    def config(self) -> SyntheticAugmentationConfig:
+        return self._config
 
-    @aug_prob.setter
-    def aug_prob(self, value: float) -> None:
-        self._aug_prob = value
-        self._compose = self._build(value)
+    @config.setter
+    def config(self, value: SyntheticAugmentationConfig) -> None:
+        self._config = value
+        self._compose = self._build()
 
     def __call__(self, image: np.ndarray) -> np.ndarray:
         image = self._compose(image=image)["image"]
-        if np.random.rand() < self._aug_prob:
+        if np.random.rand() < self._config.gradient_prob:
             image = add_grayscale_gradient(
                 image,
-                fg_range=self.config.gradient_fg_range,
-                bg_range=self.config.gradient_bg_range,
-                a_range=self.config.gradient_a_range,
+                fg_range=self._config.gradient_fg_range,
+                bg_range=self._config.gradient_bg_range,
+                a_range=self._config.gradient_a_range,
             )
         return image
 
@@ -406,22 +460,16 @@ class RealAugmentationPipeline:
     transform list (no gradient overlay, no blur, no noise).
 
     Args:
-        aug_prob: Probability (0.0-1.0) of applying each stochastic transform.
         config: Hyperparameters for the transform list. When None, a default
             RealAugmentationConfig is used (matching the module-level constants).
     """
 
-    def __init__(
-        self,
-        aug_prob: float,
-        config: RealAugmentationConfig | None = None,
-    ) -> None:
-        self._aug_prob = aug_prob
-        self.config = config if config is not None else RealAugmentationConfig()
-        self._compose = self._build(aug_prob)
+    def __init__(self, config: RealAugmentationConfig | None = None) -> None:
+        self._config = config if config is not None else RealAugmentationConfig()
+        self._compose = self._build()
 
-    def _build(self, aug_prob: float) -> A.Compose:
-        cfg = self.config
+    def _build(self) -> A.Compose:
+        cfg = self._config
         return A.Compose(
             [
                 ResizeHeightSqueezeWidth(cfg.image_size, cfg.squeeze_ratio, p=1.0),
@@ -431,10 +479,10 @@ class RealAugmentationPipeline:
                     rotate=cfg.rotate_bounds,
                     shear=cfg.shear_bounds,
                     border_mode=cv2.BORDER_REFLECT,
-                    p=aug_prob,
+                    p=cfg.affine_prob,
                 ),
                 A.RandomCrop(cfg.image_size, cfg.image_size, p=1.0),
-                A.RandomBrightnessContrast(p=aug_prob),
+                A.RandomBrightnessContrast(p=cfg.brightness_contrast_prob),
                 A.RandomRotate90(p=cfg.rot_flip_prob),
                 A.HorizontalFlip(p=cfg.rot_flip_prob),
                 A.VerticalFlip(p=cfg.rot_flip_prob),
@@ -442,13 +490,13 @@ class RealAugmentationPipeline:
         )
 
     @property
-    def aug_prob(self) -> float:
-        return self._aug_prob
+    def config(self) -> RealAugmentationConfig:
+        return self._config
 
-    @aug_prob.setter
-    def aug_prob(self, value: float) -> None:
-        self._aug_prob = value
-        self._compose = self._build(value)
+    @config.setter
+    def config(self, value: RealAugmentationConfig) -> None:
+        self._config = value
+        self._compose = self._build()
 
     def __call__(self, image: np.ndarray) -> np.ndarray:
         return self._compose(image=image)["image"]
@@ -457,9 +505,10 @@ class RealAugmentationPipeline:
 class EvalAugmentationPipeline:
     """Builds the eval TTA pipeline once and reuses it across calls.
 
-    All transforms run with ``p=1.0`` so there is no ``aug_prob``.  Multiple
-    calls with the same image produce different random crops because
-    ``RandomWidthScale`` and ``RandomCrop`` are stochastic.
+    All transforms run with ``p=1.0`` so there are no per-augmentation
+    probabilities. Multiple calls with the same image still produce different
+    random crops because ``RandomWidthScale`` and ``RandomCrop`` are
+    stochastic.
 
     The pipeline is constructed once in ``__init__`` and applied inside a loop
     in ``__call__``, so construction cost is paid at most once per dataset
@@ -486,18 +535,22 @@ class EvalAugmentationPipeline:
 
 
 def augmentation_pipeline(
-    image: np.ndarray, image_type: Literal["synthetic", "real"], aug_prob: float
+    image: np.ndarray, image_type: Literal["synthetic", "real"]
 ) -> np.ndarray:
     """Applies the appropriate augmentation pipeline based on image type.
 
-    This function routes images to either the synthetic or real image augmentation
-    pipeline depending on the image_type parameter. Synthetic images (e.g., rendered
-    text) undergo different augmentations than real images (e.g., photographs) to
-    better simulate their respective real-world variations.
+    Routes images to either the synthetic or real image augmentation pipeline
+    depending on the image_type parameter. Synthetic images (e.g., rendered
+    text) undergo different augmentations than real images (e.g., photographs)
+    to better simulate their respective real-world variations.
 
-    The synthetic pipeline includes gradient addition, stronger blur, and noise to
-    simulate printing and scanning artifacts. The real pipeline focuses on geometric
-    and color transformations without synthetic artifacts.
+    The synthetic pipeline includes gradient addition, blur, and noise to
+    simulate printing and scanning artifacts. The real pipeline focuses on
+    geometric and color transformations without synthetic artifacts.
+
+    The instantiated pipeline uses default per-augmentation probabilities; for
+    fine-grained control build the pipeline class directly with a custom
+    ``SyntheticAugmentationConfig`` or ``RealAugmentationConfig``.
 
     Args:
         image: Input image as a NumPy array. Should be a grayscale image with values
@@ -505,26 +558,18 @@ def augmentation_pipeline(
         image_type: The type of image determining which pipeline to use. Must be
             either "synthetic" for rendered/generated images or "real" for
             photographs or scanned images.
-        aug_prob: The probability (0.0 to 1.0) of applying each individual
-            augmentation in the pipeline. Higher values result in more aggressive
-            augmentation. A value of 1.0 always applies all augmentations.
 
     Returns:
-        The augmented image as a NumPy array with the same shape as the input.
-        The output will always be (105, 105) due to the cropping step in both pipelines.
+        The augmented image as a NumPy array. The output will always be
+        (105, 105) due to the cropping step in both pipelines.
 
     Raises:
         ValueError: If image_type is not "synthetic" or "real".
-
-    Note:
-        Both pipelines include resizing, random scaling, cropping, and various
-        geometric and photometric transformations. See ``SyntheticAugmentationPipeline``
-        and ``RealAugmentationPipeline`` for the full transform lists.
     """
     if image_type == "synthetic":
-        return SyntheticAugmentationPipeline(aug_prob)(image)
+        return SyntheticAugmentationPipeline()(image)
     elif image_type == "real":
-        return RealAugmentationPipeline(aug_prob)(image)
+        return RealAugmentationPipeline()(image)
     else:
         raise ValueError("The image type must be either 'synthetic' or 'real'.")
 
@@ -564,9 +609,5 @@ def eval_pipeline(image: np.ndarray, num_image_crops: int) -> np.ndarray:
         >>> crops.shape
         (10, 105, 105)
         >>> # Feed all crops to model and average predictions
-
-    Note:
-        The scale_limit of 0.4 (±40%) is higher than the training scale_limit of
-        0.15 (±15%) to ensure good coverage during evaluation.
     """
     return EvalAugmentationPipeline()(image, num_image_crops)

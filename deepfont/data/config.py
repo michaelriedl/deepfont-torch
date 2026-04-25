@@ -31,7 +31,6 @@ class PretrainDataConfig(BaseModel):
         >>> config = PretrainDataConfig(
         ...     synthetic_bcf_file="data/train.bcf",
         ...     real_image_dir="data/real_images",
-        ...     aug_prob=0.5,
         ... )
     """
 
@@ -46,15 +45,6 @@ class PretrainDataConfig(BaseModel):
         description=(
             "Directory containing real/scanned font images. Supports .png, "
             ".jpg, .jpeg, and .gif files. None means synthetic data only."
-        ),
-    )
-    aug_prob: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description=(
-            "Probability of applying each augmentation in the pipeline. "
-            "Higher values result in more aggressive augmentation."
         ),
     )
     image_normalization: Literal["0to1", "-1to1"] = Field(
@@ -105,15 +95,6 @@ class FinetuneDataConfig(BaseModel):
     label_file: str = Field(
         default="",
         description="Path to binary label file (uint32 format, one label per image).",
-    )
-    aug_prob: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description=(
-            "Probability of applying each augmentation in the pipeline. "
-            "Higher values result in more aggressive augmentation."
-        ),
     )
     image_normalization: Literal["0to1", "-1to1"] = Field(
         default="0to1",

@@ -5,15 +5,15 @@ the flat shared-memory packing/unpacking preserves image data exactly.
 """
 
 import struct
-
-import numpy as np
-import pytest
-import torch
-from PIL import Image
 from io import BytesIO
 
-from deepfont.data.config import PretrainDataConfig, FinetuneDataConfig
-from deepfont.data.datasets import PretrainData, FinetuneData
+import numpy as np
+import torch
+import pytest
+from PIL import Image
+
+from deepfont.data.config import FinetuneDataConfig, PretrainDataConfig
+from deepfont.data.datasets import FinetuneData, PretrainData
 
 
 def _make_png_bytes(width: int, height: int, seed: int) -> bytes:
@@ -58,10 +58,11 @@ def pretrain_dataset(tmp_path):
     config = PretrainDataConfig(
         synthetic_bcf_file=bcf_path,
         real_image_dir=None,
-        aug_prob=0.0,
         image_normalization="0to1",
     )
-    return PretrainData(config)
+    dataset = PretrainData(config)
+    dataset.disable_augmentation()
+    return dataset
 
 
 @pytest.fixture
@@ -76,10 +77,11 @@ def finetune_dataset(tmp_path):
     config = FinetuneDataConfig(
         synthetic_bcf_file=bcf_path,
         label_file=label_path,
-        aug_prob=0.0,
         image_normalization="0to1",
     )
-    return FinetuneData(config)
+    dataset = FinetuneData(config)
+    dataset.disable_augmentation()
+    return dataset
 
 
 @pytest.fixture
@@ -92,7 +94,6 @@ def pretrain_dataset_with_aug(tmp_path):
     config = PretrainDataConfig(
         synthetic_bcf_file=bcf_path,
         real_image_dir=None,
-        aug_prob=1.0,
         image_normalization="0to1",
     )
     return PretrainData(config)
@@ -110,7 +111,6 @@ def finetune_dataset_with_aug(tmp_path):
     config = FinetuneDataConfig(
         synthetic_bcf_file=bcf_path,
         label_file=label_path,
-        aug_prob=1.0,
         image_normalization="0to1",
     )
     return FinetuneData(config)
@@ -172,8 +172,10 @@ class TestPretrainCacheRoundTrip:
         pretrain_dataset.cache_images(len(pretrain_dataset))
 
         # Verify shapes vary (our fixture creates images with different widths)
-        widths = [pretrain_dataset._cache_shapes[i][1].item()
-                  for i in range(pretrain_dataset.num_cached_images)]
+        widths = [
+            pretrain_dataset._cache_shapes[i][1].item()
+            for i in range(pretrain_dataset.num_cached_images)
+        ]
         assert len(set(widths)) > 1, "Test fixture should have varying widths"
 
     def test_cache_after_split(self, pretrain_dataset):

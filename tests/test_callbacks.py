@@ -870,7 +870,9 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
         """With is_real flag, num_samples//2 real and num_samples//2 syn are collected."""
         cb = self.CB(save_every_n_epochs=1, num_samples=4)
         trainer = self._make_rkv_trainer(current_epoch=0)
-        cb.on_validation_batch_start(self._mixed_batch(b=8, num_real=4), batch_idx=0, trainer=trainer)
+        cb.on_validation_batch_start(
+            self._mixed_batch(b=8, num_real=4), batch_idx=0, trainer=trainer
+        )
         self.assertIsNotNone(cb._fixed_samples)
         self.assertEqual(cb._fixed_samples.shape[0], 4)
 
@@ -879,10 +881,14 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
         cb = self.CB(save_every_n_epochs=1, num_samples=4)
         trainer = self._make_rkv_trainer(current_epoch=0)
         # Batch 0: all synthetic — can't fill real quota yet
-        cb.on_validation_batch_start(self._mixed_batch(b=4, num_real=0), batch_idx=0, trainer=trainer)
+        cb.on_validation_batch_start(
+            self._mixed_batch(b=4, num_real=0), batch_idx=0, trainer=trainer
+        )
         self.assertIsNone(cb._fixed_samples)
         # Batch 1: all real — fills the remaining real quota
-        cb.on_validation_batch_start(self._mixed_batch(b=4, num_real=4), batch_idx=1, trainer=trainer)
+        cb.on_validation_batch_start(
+            self._mixed_batch(b=4, num_real=4), batch_idx=1, trainer=trainer
+        )
         self.assertIsNotNone(cb._fixed_samples)
         self.assertEqual(cb._fixed_samples.shape[0], 4)
 
@@ -891,11 +897,15 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
         cb = self.CB(save_every_n_epochs=5, num_samples=4)
         # Epoch 0: accumulate some real samples but don't finish
         trainer_e0 = self._make_rkv_trainer(current_epoch=0)
-        cb.on_validation_batch_start(self._mixed_batch(b=4, num_real=4), batch_idx=0, trainer=trainer_e0)
+        cb.on_validation_batch_start(
+            self._mixed_batch(b=4, num_real=4), batch_idx=0, trainer=trainer_e0
+        )
         self.assertIsNone(cb._fixed_samples)  # syn quota not yet met
         # Epoch 5: batch_idx=0 should reset the pending buffers
         trainer_e5 = self._make_rkv_trainer(current_epoch=5)
-        cb.on_validation_batch_start(self._mixed_batch(b=8, num_real=4), batch_idx=0, trainer=trainer_e5)
+        cb.on_validation_batch_start(
+            self._mixed_batch(b=8, num_real=4), batch_idx=0, trainer=trainer_e5
+        )
         self.assertIsNotNone(cb._fixed_samples)
 
     def test_finalizes_with_available_samples_when_one_type_absent(self):
@@ -903,7 +913,9 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
         cb = self.CB(save_every_n_epochs=1, num_samples=4, output_dir=self.output_dir)
         trainer = self._make_rkv_trainer(current_epoch=0)
         # Only synthetic images in the entire val loop
-        cb.on_validation_batch_start(self._mixed_batch(b=8, num_real=0), batch_idx=0, trainer=trainer)
+        cb.on_validation_batch_start(
+            self._mixed_batch(b=8, num_real=0), batch_idx=0, trainer=trainer
+        )
         self.assertIsNone(cb._fixed_samples)  # real quota not met
         cb.on_validation_epoch_end(trainer, {})  # should finalize with syn only
         self.assertIsNotNone(cb._fixed_samples)
@@ -988,7 +1000,9 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
         """DataLoader default_collate returns a list — must be handled identically to a tuple."""
         cb = self.CB(save_every_n_epochs=1, num_samples=4)
         trainer = self._make_rkv_trainer(current_epoch=0)
-        cb.on_validation_batch_start(self._mixed_batch(b=8, num_real=4), batch_idx=0, trainer=trainer)
+        cb.on_validation_batch_start(
+            self._mixed_batch(b=8, num_real=4), batch_idx=0, trainer=trainer
+        )
         self.assertIsNotNone(cb._fixed_samples)
         self.assertEqual(cb._fixed_samples.shape, (4, 1, 105, 105))
 
@@ -996,7 +1010,9 @@ class TestReconstructionVisualizerCallback(unittest.TestCase):
         """A full epoch cycle with a mixed batch saves a grid file."""
         cb = self.CB(save_every_n_epochs=1, num_samples=4, output_dir=self.output_dir)
         trainer = self._make_rkv_trainer(current_epoch=2)
-        cb.on_validation_batch_start(self._mixed_batch(b=8, num_real=4), batch_idx=0, trainer=trainer)
+        cb.on_validation_batch_start(
+            self._mixed_batch(b=8, num_real=4), batch_idx=0, trainer=trainer
+        )
         cb.on_validation_epoch_end(trainer, {})
         files = os.listdir(self.output_dir)
         self.assertEqual(len(files), 1)

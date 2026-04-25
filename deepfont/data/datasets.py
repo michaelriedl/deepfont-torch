@@ -194,7 +194,7 @@ class PretrainData(BaseDataset):
 
     Features:
         - Automatic handling of synthetic (BCF) and real (directory) images
-        - Configurable augmentation probability
+        - Per-augmentation probability configuration
         - Image caching for faster iteration
         - Random train/validation splitting with stratification
         - Real image upsampling to match synthetic data size
@@ -204,7 +204,6 @@ class PretrainData(BaseDataset):
         config: PretrainDataConfig instance controlling data sources and augmentation.
         synthetic_bcf_file: Path to the BCF store file containing synthetic images.
         real_image_dir: Path to the directory containing real images.
-        aug_prob: Probability of applying each augmentation (0.0 to 1.0).
         image_normalization: Normalization scheme ("0to1" or "-1to1").
         bcf_store: BCFStoreFile instance for reading synthetic images.
         num_syn_images: Total count of synthetic images.
@@ -233,11 +232,8 @@ class PretrainData(BaseDataset):
         self.config = config
         self.synthetic_bcf_file = config.synthetic_bcf_file
         self.real_image_dir = config.real_image_dir
-        self._aug_prob = config.aug_prob
-        self._synthetic_pipeline = SyntheticAugmentationPipeline(
-            self._aug_prob, config.synthetic_augmentation
-        )
-        self._real_pipeline = RealAugmentationPipeline(self._aug_prob, config.real_augmentation)
+        self._synthetic_pipeline = SyntheticAugmentationPipeline(config.synthetic_augmentation)
+        self._real_pipeline = RealAugmentationPipeline(config.real_augmentation)
         self.image_normalization = config.image_normalization
 
         if config.manifest_file is not None:
@@ -271,15 +267,14 @@ class PretrainData(BaseDataset):
 
         self._init_cache()
 
-    @property
-    def aug_prob(self) -> float:
-        return self._aug_prob
+    def disable_augmentation(self) -> None:
+        """Zero every stochastic-prob field on both image pipelines.
 
-    @aug_prob.setter
-    def aug_prob(self, value: float) -> None:
-        self._aug_prob = value
-        self._synthetic_pipeline.aug_prob = value
-        self._real_pipeline.aug_prob = value
+        Used by validation splits so the val set still applies the deterministic
+        geometric transforms (resize, crop) but skips every randomized step.
+        """
+        self._synthetic_pipeline.config = self._synthetic_pipeline.config.with_stochastic_disabled()
+        self._real_pipeline.config = self._real_pipeline.config.with_stochastic_disabled()
 
     def __len__(self) -> int:
         """Returns the total number of images in the dataset.
@@ -504,7 +499,6 @@ class FinetuneData(BaseDataset):
         config: FinetuneDataConfig instance controlling data source and augmentation.
         synthetic_bcf_file: Path to the BCF store file containing labeled synthetic images.
         label_file: Path to the binary label file (uint32 format).
-        aug_prob: Probability of applying each augmentation (0.0 to 1.0).
         image_normalization: Normalization scheme ("0to1" or "-1to1").
         bcf_store: BCFStoreFile instance for reading images.
         labels: NumPy array of integer class labels.
@@ -534,10 +528,7 @@ class FinetuneData(BaseDataset):
         self.config = config
         self.synthetic_bcf_file = config.synthetic_bcf_file
         self.label_file = config.label_file
-        self._aug_prob = config.aug_prob
-        self._synthetic_pipeline = SyntheticAugmentationPipeline(
-            self._aug_prob, config.synthetic_augmentation
-        )
+        self._synthetic_pipeline = SyntheticAugmentationPipeline(config.synthetic_augmentation)
         self.image_normalization = config.image_normalization
 
         if config.manifest_file is not None:
@@ -563,14 +554,13 @@ class FinetuneData(BaseDataset):
 
         self._init_cache()
 
-    @property
-    def aug_prob(self) -> float:
-        return self._aug_prob
+    def disable_augmentation(self) -> None:
+        """Zero every stochastic-prob field on the synthetic pipeline.
 
-    @aug_prob.setter
-    def aug_prob(self, value: float) -> None:
-        self._aug_prob = value
-        self._synthetic_pipeline.aug_prob = value
+        Used by validation splits so the val set still applies the deterministic
+        geometric transforms (resize, crop) but skips every randomized step.
+        """
+        self._synthetic_pipeline.config = self._synthetic_pipeline.config.with_stochastic_disabled()
 
     def __len__(self) -> int:
         """Returns the total number of labeled images in the dataset.

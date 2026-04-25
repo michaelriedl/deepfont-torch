@@ -104,9 +104,7 @@ def main():
     args = parser.parse_args()
 
     # Resolve default paths
-    project_root = os.environ.get(
-        "PROJECT_ROOT", os.path.join(os.path.dirname(__file__), "..")
-    )
+    project_root = os.environ.get("PROJECT_ROOT", os.path.join(os.path.dirname(__file__), ".."))
     data_dir = os.path.join(project_root, "data")
     bcf_file = args.synthetic_bcf_file or os.path.join(
         data_dir, "deepfont_data", "BCF format", "VFR_syn_train", "train.bcf"
@@ -131,7 +129,6 @@ def main():
     config = PretrainDataConfig(
         synthetic_bcf_file=bcf_file,
         real_image_dir=real_dir,
-        aug_prob=0.5,
         image_normalization="0to1",
     )
     dataset = PretrainData(config)
@@ -163,13 +160,11 @@ def main():
     for nw in args.workers:
         print(f"Testing num_workers={nw:>2d} ... ", end="", flush=True)
         try:
-            result = benchmark_workers(
-                train_set, nw, args.batch_size, args.batches, pin_memory
-            )
+            result = benchmark_workers(train_set, nw, args.batch_size, args.batches, pin_memory)
             results.append(result)
             print(
                 f"{result['images_per_sec']:>8.0f} img/s  "
-                f"({result['sec_per_batch']*1000:>6.1f} ms/batch)"
+                f"({result['sec_per_batch'] * 1000:>6.1f} ms/batch)"
             )
             if best is None or result["images_per_sec"] > best["images_per_sec"]:
                 best = result
@@ -188,14 +183,13 @@ def main():
         print(
             f"{r['num_workers']:>8d}  "
             f"{r['images_per_sec']:>10.0f}  "
-            f"{r['sec_per_batch']*1000:>10.1f}  "
+            f"{r['sec_per_batch'] * 1000:>10.1f}  "
             f"{speedup:>7.2f}x"
         )
 
     if best:
         print()
-        print(f">>> Best: num_workers={best['num_workers']} "
-              f"({best['images_per_sec']:.0f} img/s)")
+        print(f">>> Best: num_workers={best['num_workers']} ({best['images_per_sec']:.0f} img/s)")
 
 
 if __name__ == "__main__":

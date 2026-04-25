@@ -59,8 +59,12 @@ def main(cfg: DictConfig) -> None:
     results = trainer.evaluate(ckpt_path=cfg.ckpt_path)
     logger.info(
         "Top-1: %.4f (%d / %d)  |  Top-5: %.4f (%d / %d)",
-        results["top1_accuracy"], results["correct"], results["total"],
-        results["top5_accuracy"], results["top5_correct"], results["total"],
+        results["top1_accuracy"],
+        results["correct"],
+        results["total"],
+        results["top5_accuracy"],
+        results["top5_correct"],
+        results["total"],
     )
 
 
