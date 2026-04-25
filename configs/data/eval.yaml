@@ -1,6 +1,10 @@
 # Configuration for EvalDataConfig.
 # Data source for TTA evaluation using the real test images (VFR_real_test).
 
+defaults:
+  - _self_
+  - /augmentation@eval_augmentation: eval
+
 _target_: deepfont.data.config.EvalDataConfig
 
 synthetic_bcf_file: "${paths.data_dir}deepfont_data/BCF format/VFR_real_test/vfr_large.bcf"

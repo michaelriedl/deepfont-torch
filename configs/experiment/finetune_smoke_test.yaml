@@ -14,7 +14,14 @@ tags: ["smoke_test"]
 
 # Data: no augmentation
 data:
-  aug_prob: 0.0
+  synthetic_augmentation:
+    affine_prob: 0.0
+    blur_prob: 0.0
+    brightness_contrast_prob: 0.0
+    noise_prob: 0.0
+    gradient_prob: 0.0
+    invert_prob: 0.0
+    rot_flip_prob: 0.0
 
 # Eval: minimal crops for speed
 eval_data:

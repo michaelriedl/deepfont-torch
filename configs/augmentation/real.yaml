@@ -1,0 +1,14 @@
+# Configuration for RealAugmentationConfig.
+# Hyperparameters for the real-image augmentation pipeline.
+
+_target_: deepfont.data.config.RealAugmentationConfig
+
+image_size: 105
+squeeze_ratio: 0.4  # 1 / 2.5
+scale_limit: 0.4
+rotate_bounds: [-3, 3]
+shear_bounds: [-3, 3]
+rot_flip_prob: 0.5
+invert_prob: 0.5
+affine_prob: 1.0
+brightness_contrast_prob: 1.0

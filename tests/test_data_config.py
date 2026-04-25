@@ -28,9 +28,6 @@ class TestPretrainDataConfigDefaults:
     def test_real_image_dir_default(self):
         assert PretrainDataConfig().real_image_dir is None
 
-    def test_aug_prob_default(self):
-        assert PretrainDataConfig().aug_prob == 0.5
-
     def test_image_normalization_default(self):
         assert PretrainDataConfig().image_normalization == "0to1"
 
@@ -41,7 +38,7 @@ class TestPretrainDataConfigValidation:
     def test_config_is_frozen(self):
         config = PretrainDataConfig()
         with pytest.raises(ValidationError):
-            config.aug_prob = 0.9
+            config.synthetic_bcf_file = "other.bcf"
 
     def test_custom_synthetic_bcf_file(self):
         assert PretrainDataConfig(synthetic_bcf_file="train.bcf").synthetic_bcf_file == "train.bcf"
@@ -49,25 +46,8 @@ class TestPretrainDataConfigValidation:
     def test_custom_real_image_dir(self):
         assert PretrainDataConfig(real_image_dir="data/real").real_image_dir == "data/real"
 
-    def test_custom_aug_prob(self):
-        assert PretrainDataConfig(aug_prob=0.8).aug_prob == pytest.approx(0.8)
-
     def test_custom_image_normalization(self):
         assert PretrainDataConfig(image_normalization="-1to1").image_normalization == "-1to1"
-
-    def test_aug_prob_below_zero_rejected(self):
-        with pytest.raises(ValidationError, match="aug_prob"):
-            PretrainDataConfig(aug_prob=-0.1)
-
-    def test_aug_prob_above_one_rejected(self):
-        with pytest.raises(ValidationError, match="aug_prob"):
-            PretrainDataConfig(aug_prob=1.1)
-
-    def test_aug_prob_zero_accepted(self):
-        assert PretrainDataConfig(aug_prob=0.0).aug_prob == pytest.approx(0.0)
-
-    def test_aug_prob_one_accepted(self):
-        assert PretrainDataConfig(aug_prob=1.0).aug_prob == pytest.approx(1.0)
 
     def test_invalid_image_normalization_rejected(self):
         with pytest.raises(ValidationError):
@@ -83,9 +63,6 @@ class TestFinetuneDataConfigDefaults:
     def test_label_file_default(self):
         assert FinetuneDataConfig().label_file == ""
 
-    def test_aug_prob_default(self):
-        assert FinetuneDataConfig().aug_prob == 0.5
-
     def test_image_normalization_default(self):
         assert FinetuneDataConfig().image_normalization == "0to1"
 
@@ -96,7 +73,7 @@ class TestFinetuneDataConfigValidation:
     def test_config_is_frozen(self):
         config = FinetuneDataConfig()
         with pytest.raises(ValidationError):
-            config.aug_prob = 0.9
+            config.synthetic_bcf_file = "other.bcf"
 
     def test_custom_synthetic_bcf_file(self):
         assert FinetuneDataConfig(synthetic_bcf_file="ft.bcf").synthetic_bcf_file == "ft.bcf"
@@ -104,19 +81,8 @@ class TestFinetuneDataConfigValidation:
     def test_custom_label_file(self):
         assert FinetuneDataConfig(label_file="ft.labels").label_file == "ft.labels"
 
-    def test_custom_aug_prob(self):
-        assert FinetuneDataConfig(aug_prob=0.3).aug_prob == pytest.approx(0.3)
-
     def test_custom_image_normalization(self):
         assert FinetuneDataConfig(image_normalization="-1to1").image_normalization == "-1to1"
-
-    def test_aug_prob_below_zero_rejected(self):
-        with pytest.raises(ValidationError, match="aug_prob"):
-            FinetuneDataConfig(aug_prob=-0.1)
-
-    def test_aug_prob_above_one_rejected(self):
-        with pytest.raises(ValidationError, match="aug_prob"):
-            FinetuneDataConfig(aug_prob=1.1)
 
     def test_invalid_image_normalization_rejected(self):
         with pytest.raises(ValidationError):

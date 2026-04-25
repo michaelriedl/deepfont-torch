@@ -12,6 +12,12 @@ from typing import Literal
 
 from pydantic import Field, BaseModel, ConfigDict
 
+from .augmentations import (
+    EvalAugmentationConfig,
+    RealAugmentationConfig,
+    SyntheticAugmentationConfig,
+)
+
 
 class PretrainDataConfig(BaseModel):
     """Configuration for the PretrainData dataset.
@@ -25,7 +31,6 @@ class PretrainDataConfig(BaseModel):
         >>> config = PretrainDataConfig(
         ...     synthetic_bcf_file="data/train.bcf",
         ...     real_image_dir="data/real_images",
-        ...     aug_prob=0.5,
         ... )
     """
 
@@ -42,15 +47,6 @@ class PretrainDataConfig(BaseModel):
             ".jpg, .jpeg, and .gif files. None means synthetic data only."
         ),
     )
-    aug_prob: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description=(
-            "Probability of applying each augmentation in the pipeline. "
-            "Higher values result in more aggressive augmentation."
-        ),
-    )
     image_normalization: Literal["0to1", "-1to1"] = Field(
         default="0to1",
         description=(
@@ -65,6 +61,14 @@ class PretrainDataConfig(BaseModel):
             "loading are read from the manifest instead of scanning the filesystem. "
             "All paths in the manifest are relative to the manifest file's directory."
         ),
+    )
+    synthetic_augmentation: SyntheticAugmentationConfig = Field(
+        default_factory=SyntheticAugmentationConfig,
+        description="Hyperparameters for the synthetic-image augmentation pipeline.",
+    )
+    real_augmentation: RealAugmentationConfig = Field(
+        default_factory=RealAugmentationConfig,
+        description="Hyperparameters for the real-image augmentation pipeline.",
     )
 
 
@@ -92,15 +96,6 @@ class FinetuneDataConfig(BaseModel):
         default="",
         description="Path to binary label file (uint32 format, one label per image).",
     )
-    aug_prob: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description=(
-            "Probability of applying each augmentation in the pipeline. "
-            "Higher values result in more aggressive augmentation."
-        ),
-    )
     image_normalization: Literal["0to1", "-1to1"] = Field(
         default="0to1",
         description=(
@@ -115,6 +110,10 @@ class FinetuneDataConfig(BaseModel):
             "loading are read from the manifest instead of scanning the filesystem. "
             "All paths in the manifest are relative to the manifest file's directory."
         ),
+    )
+    synthetic_augmentation: SyntheticAugmentationConfig = Field(
+        default_factory=SyntheticAugmentationConfig,
+        description="Hyperparameters for the synthetic-image augmentation pipeline.",
     )
 
 
@@ -166,4 +165,8 @@ class EvalDataConfig(BaseModel):
             "the manifest instead of scanning the filesystem. All paths in the manifest "
             "are relative to the manifest file's directory."
         ),
+    )
+    eval_augmentation: EvalAugmentationConfig = Field(
+        default_factory=EvalAugmentationConfig,
+        description="Hyperparameters for the eval (TTA) augmentation pipeline.",
     )

@@ -89,8 +89,9 @@ class FinetuneTrainer(BaseTrainer):
     def create_dataloaders(self) -> tuple[DataLoader, DataLoader]:
         """Build FinetuneData and split it.
 
-        The validation split uses aug_prob=0.0 (no augmentation) to give a
-        consistent, repeatable loss estimate across epochs.
+        The validation split calls disable_augmentation() to zero every
+        stochastic-prob field, giving a consistent, repeatable loss estimate
+        across epochs.
 
         Returns:
             (train_loader, val_loader) ready for fit().
@@ -107,7 +108,7 @@ class FinetuneTrainer(BaseTrainer):
         train_set, val_set = dataset.split_data_random(train_ratio=self.config.train_ratio)
 
         # Disable augmentation for the validation split
-        val_set.aug_prob = 0.0
+        val_set.disable_augmentation()
 
         if self.config.num_images_to_cache > 0:
             train_set.cache_images(self.config.num_images_to_cache)

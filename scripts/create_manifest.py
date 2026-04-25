@@ -95,12 +95,8 @@ def _build_synthetic_rows(
 
 def _build_real_rows(real_image_dir: Path, manifest_dir: Path) -> pa.Table:
     """Scan a directory for image files; return a PyArrow Table."""
-    names = [
-        x for x in os.listdir(real_image_dir) if x.lower().endswith(_REAL_IMAGE_EXTENSIONS)
-    ]
-    rel_paths = [
-        _make_relative((real_image_dir / name).resolve(), manifest_dir) for name in names
-    ]
+    names = [x for x in os.listdir(real_image_dir) if x.lower().endswith(_REAL_IMAGE_EXTENSIONS)]
+    rel_paths = [_make_relative((real_image_dir / name).resolve(), manifest_dir) for name in names]
     count = len(rel_paths)
 
     return pa.table(

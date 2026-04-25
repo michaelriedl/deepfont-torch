@@ -1,0 +1,8 @@
+# Configuration for EvalAugmentationConfig.
+# Hyperparameters for the eval (TTA) augmentation pipeline.
+
+_target_: deepfont.data.config.EvalAugmentationConfig
+
+image_size: 105
+squeeze_ratio: 0.4  # 1 / 2.5
+scale_limit: 0.4

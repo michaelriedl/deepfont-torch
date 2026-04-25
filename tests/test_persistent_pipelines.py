@@ -1,16 +1,16 @@
 """Tests for the persistent augmentation pipeline classes.
 
 Verifies that SyntheticAugmentationPipeline, RealAugmentationPipeline, and
-EvalAugmentationPipeline produce correct outputs, that their aug_prob property
-setter rebuilds the internal Compose correctly, and that deep-copying a dataset
-produces independent pipeline objects (so val_set.aug_prob = 0.0 does not affect
-the train set).
+EvalAugmentationPipeline produce correct outputs, that assigning a new config
+to the pipeline rebuilds the internal Compose correctly, and that deep-copying
+a dataset produces independent pipeline objects (so val_set.disable_augmentation()
+does not affect the train set).
 
 Test classes:
-    TestSyntheticAugmentationPipeline  -- output shape/dtype, aug_prob property
-    TestRealAugmentationPipeline       -- output shape/dtype, aug_prob property
+    TestSyntheticAugmentationPipeline  -- output shape/dtype, config property
+    TestRealAugmentationPipeline       -- output shape/dtype, config property
     TestEvalAugmentationPipeline       -- output shape, stochasticity
-    TestDatasetAugProbProperty         -- property behavior on PretrainData and FinetuneData
+    TestDatasetDisableAugmentation     -- disable_augmentation behavior
 """
 
 import copy
@@ -22,15 +22,16 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from deepfont.data.augmentations import (
-    IMAGE_SIZE,
-    EvalAugmentationPipeline,
-    RealAugmentationPipeline,
-    SyntheticAugmentationPipeline,
-)
 from deepfont.data.config import FinetuneDataConfig, PretrainDataConfig
 from deepfont.data.datasets import FinetuneData, PretrainData
-
+from deepfont.data.augmentations import (
+    IMAGE_SIZE,
+    RealAugmentationConfig,
+    EvalAugmentationPipeline,
+    RealAugmentationPipeline,
+    SyntheticAugmentationConfig,
+    SyntheticAugmentationPipeline,
+)
 
 # Shared fixtures
 
@@ -73,7 +74,6 @@ def pretrain_dataset(tmp_path):
     config = PretrainDataConfig(
         synthetic_bcf_file=bcf_path,
         real_image_dir=None,
-        aug_prob=0.5,
         image_normalization="0to1",
     )
     return PretrainData(config)
@@ -89,7 +89,6 @@ def finetune_dataset(tmp_path):
     config = FinetuneDataConfig(
         synthetic_bcf_file=bcf_path,
         label_file=label_path,
-        aug_prob=0.5,
         image_normalization="0to1",
     )
     return FinetuneData(config)
@@ -100,56 +99,52 @@ def finetune_dataset(tmp_path):
 
 class TestSyntheticAugmentationPipeline:
     def test_output_shape(self, wide_image):
-        pipeline = SyntheticAugmentationPipeline(aug_prob=0.5)
+        pipeline = SyntheticAugmentationPipeline()
         result = pipeline(wide_image)
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
 
     def test_output_dtype_is_uint8(self, wide_image):
-        pipeline = SyntheticAugmentationPipeline(aug_prob=1.0)
+        pipeline = SyntheticAugmentationPipeline()
         assert pipeline(wide_image).dtype == np.uint8
 
     def test_output_values_in_valid_range(self, wide_image):
-        pipeline = SyntheticAugmentationPipeline(aug_prob=1.0)
+        pipeline = SyntheticAugmentationPipeline()
         result = pipeline(wide_image)
         assert int(result.min()) >= 0
         assert int(result.max()) <= 255
 
-    def test_aug_prob_getter_reflects_initial_value(self):
-        pipeline = SyntheticAugmentationPipeline(aug_prob=0.7)
-        assert pipeline.aug_prob == pytest.approx(0.7)
+    def test_default_config_uses_default_values(self):
+        pipeline = SyntheticAugmentationPipeline()
+        assert pipeline.config == SyntheticAugmentationConfig()
 
-    def test_aug_prob_setter_updates_getter(self):
-        pipeline = SyntheticAugmentationPipeline(aug_prob=0.5)
-        pipeline.aug_prob = 0.0
-        assert pipeline.aug_prob == pytest.approx(0.0)
+    def test_config_setter_updates_getter(self):
+        pipeline = SyntheticAugmentationPipeline()
+        new_config = pipeline.config.with_stochastic_disabled()
+        pipeline.config = new_config
+        assert pipeline.config == new_config
 
-    def test_aug_prob_setter_rebuilds_compose(self):
-        pipeline = SyntheticAugmentationPipeline(aug_prob=0.5)
+    def test_config_setter_rebuilds_compose(self):
+        pipeline = SyntheticAugmentationPipeline()
         original_compose = pipeline._compose
-        pipeline.aug_prob = 0.0
+        pipeline.config = pipeline.config.with_stochastic_disabled()
         assert pipeline._compose is not original_compose
 
-    def test_aug_prob_zero_disables_gradient(self, wide_image):
-        """With aug_prob=0.0, add_grayscale_gradient must never be called."""
-        pipeline = SyntheticAugmentationPipeline(aug_prob=0.0)
-        with patch(
-            "deepfont.data.augmentations.add_grayscale_gradient"
-        ) as mock_gradient:
+    def test_disabled_config_disables_gradient(self, wide_image):
+        """With every *_prob=0, add_grayscale_gradient must never be called."""
+        pipeline = SyntheticAugmentationPipeline(
+            SyntheticAugmentationConfig().with_stochastic_disabled()
+        )
+        with patch("deepfont.data.augmentations.add_grayscale_gradient") as mock_gradient:
             for _ in range(20):
                 pipeline(wide_image)
         mock_gradient.assert_not_called()
 
     def test_deepcopy_produces_independent_pipeline(self, wide_image):
-        original = SyntheticAugmentationPipeline(aug_prob=0.5)
+        original = SyntheticAugmentationPipeline()
         cloned = copy.deepcopy(original)
-        cloned.aug_prob = 0.0
-        assert original.aug_prob == pytest.approx(0.5)
-        assert cloned.aug_prob == pytest.approx(0.0)
-
-    @pytest.mark.parametrize("aug_prob", [0.0, 0.5, 1.0])
-    def test_various_aug_probs_produce_correct_shape(self, wide_image, aug_prob):
-        pipeline = SyntheticAugmentationPipeline(aug_prob=aug_prob)
-        assert pipeline(wide_image).shape == (IMAGE_SIZE, IMAGE_SIZE)
+        cloned.config = cloned.config.with_stochastic_disabled()
+        assert original.config.gradient_prob == pytest.approx(1.0)
+        assert cloned.config.gradient_prob == pytest.approx(0.0)
 
 
 # RealAugmentationPipeline
@@ -157,43 +152,39 @@ class TestSyntheticAugmentationPipeline:
 
 class TestRealAugmentationPipeline:
     def test_output_shape(self, wide_image):
-        pipeline = RealAugmentationPipeline(aug_prob=0.5)
+        pipeline = RealAugmentationPipeline()
         assert pipeline(wide_image).shape == (IMAGE_SIZE, IMAGE_SIZE)
 
     def test_output_dtype_is_uint8(self, wide_image):
-        assert RealAugmentationPipeline(aug_prob=1.0)(wide_image).dtype == np.uint8
+        assert RealAugmentationPipeline()(wide_image).dtype == np.uint8
 
     def test_output_values_in_valid_range(self, wide_image):
-        result = RealAugmentationPipeline(aug_prob=1.0)(wide_image)
+        result = RealAugmentationPipeline()(wide_image)
         assert int(result.min()) >= 0
         assert int(result.max()) <= 255
 
-    def test_aug_prob_getter_reflects_initial_value(self):
-        assert RealAugmentationPipeline(aug_prob=0.3).aug_prob == pytest.approx(0.3)
+    def test_default_config_uses_default_values(self):
+        pipeline = RealAugmentationPipeline()
+        assert pipeline.config == RealAugmentationConfig()
 
-    def test_aug_prob_setter_updates_getter(self):
-        pipeline = RealAugmentationPipeline(aug_prob=0.5)
-        pipeline.aug_prob = 0.0
-        assert pipeline.aug_prob == pytest.approx(0.0)
+    def test_config_setter_updates_getter(self):
+        pipeline = RealAugmentationPipeline()
+        new_config = pipeline.config.with_stochastic_disabled()
+        pipeline.config = new_config
+        assert pipeline.config == new_config
 
-    def test_aug_prob_setter_rebuilds_compose(self):
-        pipeline = RealAugmentationPipeline(aug_prob=0.5)
+    def test_config_setter_rebuilds_compose(self):
+        pipeline = RealAugmentationPipeline()
         original_compose = pipeline._compose
-        pipeline.aug_prob = 0.0
+        pipeline.config = pipeline.config.with_stochastic_disabled()
         assert pipeline._compose is not original_compose
 
     def test_deepcopy_produces_independent_pipeline(self):
-        original = RealAugmentationPipeline(aug_prob=0.5)
+        original = RealAugmentationPipeline()
         cloned = copy.deepcopy(original)
-        cloned.aug_prob = 0.0
-        assert original.aug_prob == pytest.approx(0.5)
-
-    @pytest.mark.parametrize("aug_prob", [0.0, 0.5, 1.0])
-    def test_various_aug_probs_produce_correct_shape(self, wide_image, aug_prob):
-        assert RealAugmentationPipeline(aug_prob=aug_prob)(wide_image).shape == (
-            IMAGE_SIZE,
-            IMAGE_SIZE,
-        )
+        cloned.config = cloned.config.with_stochastic_disabled()
+        assert original.config.affine_prob == pytest.approx(1.0)
+        assert cloned.config.affine_prob == pytest.approx(0.0)
 
 
 # EvalAugmentationPipeline
@@ -229,51 +220,57 @@ class TestEvalAugmentationPipeline:
             assert result.shape == (4, IMAGE_SIZE, IMAGE_SIZE)
 
 
-# Dataset aug_prob property
+# Dataset disable_augmentation
 
 
-class TestDatasetAugProbProperty:
-    def test_pretrain_aug_prob_getter(self, pretrain_dataset):
-        assert pretrain_dataset.aug_prob == pytest.approx(0.5)
+class TestDatasetDisableAugmentation:
+    def test_pretrain_disable_zeros_pipeline_probs(self, pretrain_dataset):
+        pretrain_dataset.disable_augmentation()
+        syn_cfg = pretrain_dataset._synthetic_pipeline.config
+        real_cfg = pretrain_dataset._real_pipeline.config
+        assert syn_cfg.affine_prob == pytest.approx(0.0)
+        assert syn_cfg.blur_prob == pytest.approx(0.0)
+        assert syn_cfg.brightness_contrast_prob == pytest.approx(0.0)
+        assert syn_cfg.noise_prob == pytest.approx(0.0)
+        assert syn_cfg.gradient_prob == pytest.approx(0.0)
+        assert syn_cfg.invert_prob == pytest.approx(0.0)
+        assert syn_cfg.rot_flip_prob == pytest.approx(0.0)
+        assert real_cfg.affine_prob == pytest.approx(0.0)
+        assert real_cfg.brightness_contrast_prob == pytest.approx(0.0)
+        assert real_cfg.invert_prob == pytest.approx(0.0)
+        assert real_cfg.rot_flip_prob == pytest.approx(0.0)
 
-    def test_pretrain_aug_prob_setter_updates_pipeline(self, pretrain_dataset):
-        pretrain_dataset.aug_prob = 0.0
-        assert pretrain_dataset._aug_prob == pytest.approx(0.0)
-        assert pretrain_dataset._synthetic_pipeline.aug_prob == pytest.approx(0.0)
-        assert pretrain_dataset._real_pipeline.aug_prob == pytest.approx(0.0)
+    def test_finetune_disable_zeros_pipeline_probs(self, finetune_dataset):
+        finetune_dataset.disable_augmentation()
+        syn_cfg = finetune_dataset._synthetic_pipeline.config
+        assert syn_cfg.affine_prob == pytest.approx(0.0)
+        assert syn_cfg.gradient_prob == pytest.approx(0.0)
+        assert syn_cfg.invert_prob == pytest.approx(0.0)
+        assert syn_cfg.rot_flip_prob == pytest.approx(0.0)
 
-    def test_finetune_aug_prob_getter(self, finetune_dataset):
-        assert finetune_dataset.aug_prob == pytest.approx(0.5)
-
-    def test_finetune_aug_prob_setter_updates_pipeline(self, finetune_dataset):
-        finetune_dataset.aug_prob = 0.0
-        assert finetune_dataset._aug_prob == pytest.approx(0.0)
-        assert finetune_dataset._synthetic_pipeline.aug_prob == pytest.approx(0.0)
-
-    def test_val_set_aug_prob_mutation_does_not_affect_train_set(self, finetune_dataset):
-        """Mirrors the finetune.py pattern: val_set.aug_prob = 0.0."""
+    def test_val_set_disable_does_not_affect_train_set(self, finetune_dataset):
+        """Mirrors the finetune.py pattern: val_set.disable_augmentation()."""
         train_set, val_set = finetune_dataset.split_data_random(train_ratio=0.8)
-        original_train_aug_prob = train_set.aug_prob
+        original_train_gradient = train_set._synthetic_pipeline.config.gradient_prob
 
-        val_set.aug_prob = 0.0
+        val_set.disable_augmentation()
 
-        # val_set is updated
-        assert val_set.aug_prob == pytest.approx(0.0)
-        assert val_set._synthetic_pipeline.aug_prob == pytest.approx(0.0)
-        # train_set is unaffected
-        assert train_set.aug_prob == pytest.approx(original_train_aug_prob)
-        assert train_set._synthetic_pipeline.aug_prob == pytest.approx(original_train_aug_prob)
+        assert val_set._synthetic_pipeline.config.gradient_prob == pytest.approx(0.0)
+        assert train_set._synthetic_pipeline.config.gradient_prob == pytest.approx(
+            original_train_gradient
+        )
 
-    def test_pretrain_val_set_aug_prob_mutation_independent(self, pretrain_dataset):
+    def test_pretrain_val_set_disable_independent(self, pretrain_dataset):
         train_set, val_set = pretrain_dataset.split_data_random(train_ratio=0.8)
-        val_set.aug_prob = 0.0
+        val_set.disable_augmentation()
 
-        assert val_set._synthetic_pipeline.aug_prob == pytest.approx(0.0)
-        assert val_set._real_pipeline.aug_prob == pytest.approx(0.0)
-        assert train_set.aug_prob == pytest.approx(0.5)
+        assert val_set._synthetic_pipeline.config.gradient_prob == pytest.approx(0.0)
+        assert val_set._real_pipeline.config.affine_prob == pytest.approx(0.0)
+        assert train_set._synthetic_pipeline.config.gradient_prob == pytest.approx(1.0)
+        assert train_set._real_pipeline.config.affine_prob == pytest.approx(1.0)
 
     def test_deepcopy_of_dataset_produces_independent_pipelines(self, finetune_dataset):
         cloned = copy.deepcopy(finetune_dataset)
-        cloned.aug_prob = 0.0
-        assert finetune_dataset.aug_prob == pytest.approx(0.5)
-        assert finetune_dataset._synthetic_pipeline.aug_prob == pytest.approx(0.5)
+        cloned.disable_augmentation()
+        assert finetune_dataset._synthetic_pipeline.config.gradient_prob == pytest.approx(1.0)
+        assert cloned._synthetic_pipeline.config.gradient_prob == pytest.approx(0.0)
