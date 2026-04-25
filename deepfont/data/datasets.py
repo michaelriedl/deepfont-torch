@@ -234,8 +234,10 @@ class PretrainData(BaseDataset):
         self.synthetic_bcf_file = config.synthetic_bcf_file
         self.real_image_dir = config.real_image_dir
         self._aug_prob = config.aug_prob
-        self._synthetic_pipeline = SyntheticAugmentationPipeline(self._aug_prob)
-        self._real_pipeline = RealAugmentationPipeline(self._aug_prob)
+        self._synthetic_pipeline = SyntheticAugmentationPipeline(
+            self._aug_prob, config.synthetic_augmentation
+        )
+        self._real_pipeline = RealAugmentationPipeline(self._aug_prob, config.real_augmentation)
         self.image_normalization = config.image_normalization
 
         if config.manifest_file is not None:
@@ -533,7 +535,9 @@ class FinetuneData(BaseDataset):
         self.synthetic_bcf_file = config.synthetic_bcf_file
         self.label_file = config.label_file
         self._aug_prob = config.aug_prob
-        self._synthetic_pipeline = SyntheticAugmentationPipeline(self._aug_prob)
+        self._synthetic_pipeline = SyntheticAugmentationPipeline(
+            self._aug_prob, config.synthetic_augmentation
+        )
         self.image_normalization = config.image_normalization
 
         if config.manifest_file is not None:
@@ -745,7 +749,7 @@ class EvalData(BaseDataset):
         self.label_file = config.label_file
         self.image_normalization = config.image_normalization
         self.num_image_crops = config.num_image_crops
-        self._eval_pipeline = EvalAugmentationPipeline()
+        self._eval_pipeline = EvalAugmentationPipeline(config.eval_augmentation)
 
         if config.manifest_file is not None:
             manifest_dir = Path(config.manifest_file).resolve().parent

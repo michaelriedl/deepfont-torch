@@ -12,6 +12,12 @@ from typing import Literal
 
 from pydantic import Field, BaseModel, ConfigDict
 
+from .augmentations import (
+    EvalAugmentationConfig,
+    RealAugmentationConfig,
+    SyntheticAugmentationConfig,
+)
+
 
 class PretrainDataConfig(BaseModel):
     """Configuration for the PretrainData dataset.
@@ -66,6 +72,14 @@ class PretrainDataConfig(BaseModel):
             "All paths in the manifest are relative to the manifest file's directory."
         ),
     )
+    synthetic_augmentation: SyntheticAugmentationConfig = Field(
+        default_factory=SyntheticAugmentationConfig,
+        description="Hyperparameters for the synthetic-image augmentation pipeline.",
+    )
+    real_augmentation: RealAugmentationConfig = Field(
+        default_factory=RealAugmentationConfig,
+        description="Hyperparameters for the real-image augmentation pipeline.",
+    )
 
 
 class FinetuneDataConfig(BaseModel):
@@ -115,6 +129,10 @@ class FinetuneDataConfig(BaseModel):
             "loading are read from the manifest instead of scanning the filesystem. "
             "All paths in the manifest are relative to the manifest file's directory."
         ),
+    )
+    synthetic_augmentation: SyntheticAugmentationConfig = Field(
+        default_factory=SyntheticAugmentationConfig,
+        description="Hyperparameters for the synthetic-image augmentation pipeline.",
     )
 
 
@@ -166,4 +184,8 @@ class EvalDataConfig(BaseModel):
             "the manifest instead of scanning the filesystem. All paths in the manifest "
             "are relative to the manifest file's directory."
         ),
+    )
+    eval_augmentation: EvalAugmentationConfig = Field(
+        default_factory=EvalAugmentationConfig,
+        description="Hyperparameters for the eval (TTA) augmentation pipeline.",
     )

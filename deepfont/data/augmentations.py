@@ -3,6 +3,7 @@ from typing import Any, Literal
 import cv2
 import numpy as np
 import albumentations as A  # noqa: N812
+from pydantic import Field, BaseModel, ConfigDict
 from albumentations import RandomScale
 from albumentations.core.type_definitions import Targets
 from albumentations.core.transforms_interface import DualTransform
@@ -21,6 +22,149 @@ INVERT_PROB = 0.5
 GRADIENT_FG_RANGE = (140, 220)
 GRADIENT_BG_RANGE = (20, 100)
 GRADIENT_A_RANGE = (0.4, 0.6)
+
+
+class SyntheticAugmentationConfig(BaseModel):
+    """Hyperparameters for the synthetic-image augmentation pipeline.
+
+    Mirrors the kwargs of SyntheticAugmentationPipeline so the same values
+    can be supplied via Hydra configs and validated by pydantic. Defaults
+    match the module-level constants in this module.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    image_size: int = Field(
+        default=IMAGE_SIZE,
+        gt=0,
+        description="Target output crop size (square) in pixels.",
+    )
+    squeeze_ratio: float = Field(
+        default=SQUEEZE_RATIO,
+        gt=0.0,
+        description="Width-squeeze factor used by ResizeHeightSqueezeWidth.",
+    )
+    scale_limit: float = Field(
+        default=SCALE_LIMIT,
+        ge=0.0,
+        description="Random width-scale limit used by RandomWidthScale.",
+    )
+    rotate_bounds: tuple[float, float] = Field(
+        default=ROTATE_BOUNDS,
+        description="(min, max) rotation angles in degrees for the affine step.",
+    )
+    shear_bounds: tuple[float, float] = Field(
+        default=SHEAR_BOUNDS,
+        description="(min, max) shear angles in degrees for the affine step.",
+    )
+    blur_limit: tuple[float, float] = Field(
+        default=BLUR_LIMIT,
+        description="(min, max) sigma range for GaussianBlur.",
+    )
+    noise_mean_range: tuple[float, float] = Field(
+        default=NOISE_MEAN_RANGE,
+        description="(min, max) mean range for GaussNoise.",
+    )
+    noise_std_range: tuple[float, float] = Field(
+        default=NOISE_STD_RANGE,
+        description="(min, max) standard-deviation range for GaussNoise.",
+    )
+    rot_flip_prob: float = Field(
+        default=ROT_FLIP_PROB,
+        ge=0.0,
+        le=1.0,
+        description="Probability for RandomRotate90, HorizontalFlip, VerticalFlip.",
+    )
+    invert_prob: float = Field(
+        default=INVERT_PROB,
+        ge=0.0,
+        le=1.0,
+        description="Probability for InvertImg.",
+    )
+    gradient_fg_range: tuple[float, float] = Field(
+        default=GRADIENT_FG_RANGE,
+        description="(min, max) foreground intensity for the gradient overlay.",
+    )
+    gradient_bg_range: tuple[float, float] = Field(
+        default=GRADIENT_BG_RANGE,
+        description="(min, max) background intensity for the gradient overlay.",
+    )
+    gradient_a_range: tuple[float, float] = Field(
+        default=GRADIENT_A_RANGE,
+        description="(min, max) gradient amplitude factor.",
+    )
+
+
+class RealAugmentationConfig(BaseModel):
+    """Hyperparameters for the real-image augmentation pipeline.
+
+    Mirrors the kwargs of RealAugmentationPipeline. Defaults match the
+    module-level constants in this module.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    image_size: int = Field(
+        default=IMAGE_SIZE,
+        gt=0,
+        description="Target output crop size (square) in pixels.",
+    )
+    squeeze_ratio: float = Field(
+        default=SQUEEZE_RATIO,
+        gt=0.0,
+        description="Width-squeeze factor used by ResizeHeightSqueezeWidth.",
+    )
+    scale_limit: float = Field(
+        default=SCALE_LIMIT,
+        ge=0.0,
+        description="Random width-scale limit used by RandomWidthScale.",
+    )
+    rotate_bounds: tuple[float, float] = Field(
+        default=ROTATE_BOUNDS,
+        description="(min, max) rotation angles in degrees for the affine step.",
+    )
+    shear_bounds: tuple[float, float] = Field(
+        default=SHEAR_BOUNDS,
+        description="(min, max) shear angles in degrees for the affine step.",
+    )
+    rot_flip_prob: float = Field(
+        default=ROT_FLIP_PROB,
+        ge=0.0,
+        le=1.0,
+        description="Probability for RandomRotate90, HorizontalFlip, VerticalFlip.",
+    )
+    invert_prob: float = Field(
+        default=INVERT_PROB,
+        ge=0.0,
+        le=1.0,
+        description="Probability for InvertImg.",
+    )
+
+
+class EvalAugmentationConfig(BaseModel):
+    """Hyperparameters for the eval (TTA) augmentation pipeline.
+
+    Mirrors the kwargs of EvalAugmentationPipeline. Defaults match the
+    module-level constants in this module.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    image_size: int = Field(
+        default=IMAGE_SIZE,
+        gt=0,
+        description="Target output crop size (square) in pixels.",
+    )
+    squeeze_ratio: float = Field(
+        default=SQUEEZE_RATIO,
+        gt=0.0,
+        description="Width-squeeze factor used by ResizeHeightSqueezeWidth.",
+    )
+    scale_limit: float = Field(
+        default=SCALE_LIMIT,
+        ge=0.0,
+        description="Random width-scale limit used by RandomWidthScale.",
+    )
 
 
 def add_grayscale_gradient(
@@ -193,32 +337,44 @@ class SyntheticAugmentationPipeline:
 
     Args:
         aug_prob: Probability (0.0-1.0) of applying each stochastic transform.
+        config: Hyperparameters for the transform list. When None, a default
+            SyntheticAugmentationConfig is used (matching the module-level
+            constants).
     """
 
-    def __init__(self, aug_prob: float) -> None:
+    def __init__(
+        self,
+        aug_prob: float,
+        config: SyntheticAugmentationConfig | None = None,
+    ) -> None:
         self._aug_prob = aug_prob
+        self.config = config if config is not None else SyntheticAugmentationConfig()
         self._compose = self._build(aug_prob)
 
-    @staticmethod
-    def _build(aug_prob: float) -> A.Compose:
+    def _build(self, aug_prob: float) -> A.Compose:
+        cfg = self.config
         return A.Compose(
             [
-                ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
-                RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
-                A.InvertImg(p=INVERT_PROB),
+                ResizeHeightSqueezeWidth(cfg.image_size, cfg.squeeze_ratio, p=1.0),
+                RandomWidthScale(scale_limit=cfg.scale_limit, p=1.0),
+                A.InvertImg(p=cfg.invert_prob),
                 A.Affine(
-                    rotate=ROTATE_BOUNDS,
-                    shear=SHEAR_BOUNDS,
+                    rotate=cfg.rotate_bounds,
+                    shear=cfg.shear_bounds,
                     border_mode=cv2.BORDER_REFLECT,
                     p=aug_prob,
                 ),
-                A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
-                A.GaussianBlur(blur_limit=0, sigma_limit=BLUR_LIMIT, p=aug_prob),
+                A.RandomCrop(cfg.image_size, cfg.image_size, p=1.0),
+                A.GaussianBlur(blur_limit=0, sigma_limit=cfg.blur_limit, p=aug_prob),
                 A.RandomBrightnessContrast(p=aug_prob),
-                A.GaussNoise(std_range=NOISE_STD_RANGE, mean_range=NOISE_MEAN_RANGE, p=aug_prob),
-                A.RandomRotate90(p=ROT_FLIP_PROB),
-                A.HorizontalFlip(p=ROT_FLIP_PROB),
-                A.VerticalFlip(p=ROT_FLIP_PROB),
+                A.GaussNoise(
+                    std_range=cfg.noise_std_range,
+                    mean_range=cfg.noise_mean_range,
+                    p=aug_prob,
+                ),
+                A.RandomRotate90(p=cfg.rot_flip_prob),
+                A.HorizontalFlip(p=cfg.rot_flip_prob),
+                A.VerticalFlip(p=cfg.rot_flip_prob),
             ]
         )
 
@@ -234,7 +390,12 @@ class SyntheticAugmentationPipeline:
     def __call__(self, image: np.ndarray) -> np.ndarray:
         image = self._compose(image=image)["image"]
         if np.random.rand() < self._aug_prob:
-            image = add_grayscale_gradient(image)
+            image = add_grayscale_gradient(
+                image,
+                fg_range=self.config.gradient_fg_range,
+                bg_range=self.config.gradient_bg_range,
+                a_range=self.config.gradient_a_range,
+            )
         return image
 
 
@@ -246,30 +407,37 @@ class RealAugmentationPipeline:
 
     Args:
         aug_prob: Probability (0.0-1.0) of applying each stochastic transform.
+        config: Hyperparameters for the transform list. When None, a default
+            RealAugmentationConfig is used (matching the module-level constants).
     """
 
-    def __init__(self, aug_prob: float) -> None:
+    def __init__(
+        self,
+        aug_prob: float,
+        config: RealAugmentationConfig | None = None,
+    ) -> None:
         self._aug_prob = aug_prob
+        self.config = config if config is not None else RealAugmentationConfig()
         self._compose = self._build(aug_prob)
 
-    @staticmethod
-    def _build(aug_prob: float) -> A.Compose:
+    def _build(self, aug_prob: float) -> A.Compose:
+        cfg = self.config
         return A.Compose(
             [
-                ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
-                RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
-                A.InvertImg(p=INVERT_PROB),
+                ResizeHeightSqueezeWidth(cfg.image_size, cfg.squeeze_ratio, p=1.0),
+                RandomWidthScale(scale_limit=cfg.scale_limit, p=1.0),
+                A.InvertImg(p=cfg.invert_prob),
                 A.Affine(
-                    rotate=ROTATE_BOUNDS,
-                    shear=SHEAR_BOUNDS,
+                    rotate=cfg.rotate_bounds,
+                    shear=cfg.shear_bounds,
                     border_mode=cv2.BORDER_REFLECT,
                     p=aug_prob,
                 ),
-                A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
+                A.RandomCrop(cfg.image_size, cfg.image_size, p=1.0),
                 A.RandomBrightnessContrast(p=aug_prob),
-                A.RandomRotate90(p=ROT_FLIP_PROB),
-                A.HorizontalFlip(p=ROT_FLIP_PROB),
-                A.VerticalFlip(p=ROT_FLIP_PROB),
+                A.RandomRotate90(p=cfg.rot_flip_prob),
+                A.HorizontalFlip(p=cfg.rot_flip_prob),
+                A.VerticalFlip(p=cfg.rot_flip_prob),
             ]
         )
 
@@ -296,14 +464,19 @@ class EvalAugmentationPipeline:
     The pipeline is constructed once in ``__init__`` and applied inside a loop
     in ``__call__``, so construction cost is paid at most once per dataset
     lifetime rather than once per image.
+
+    Args:
+        config: Hyperparameters for the transform list. When None, a default
+            EvalAugmentationConfig is used (matching the module-level constants).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, config: EvalAugmentationConfig | None = None) -> None:
+        self.config = config if config is not None else EvalAugmentationConfig()
         self._compose = A.Compose(
             [
-                ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0),
-                RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0),
-                A.RandomCrop(IMAGE_SIZE, IMAGE_SIZE, p=1.0),
+                ResizeHeightSqueezeWidth(self.config.image_size, self.config.squeeze_ratio, p=1.0),
+                RandomWidthScale(scale_limit=self.config.scale_limit, p=1.0),
+                A.RandomCrop(self.config.image_size, self.config.image_size, p=1.0),
             ]
         )
 

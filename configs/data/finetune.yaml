@@ -1,6 +1,10 @@
 # Configuration for FinetuneDataConfig.
 # Data source for the DeepFont supervised fine-tuning stage.
 
+defaults:
+  - _self_
+  - /augmentation@synthetic_augmentation: synthetic
+
 _target_: deepfont.data.config.FinetuneDataConfig
 
 # --- Train / val data ---

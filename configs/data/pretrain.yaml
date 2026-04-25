@@ -1,6 +1,11 @@
 # Configuration for PretrainDataConfig.
 # Data sources for the DeepFont autoencoder pretraining stage.
 
+defaults:
+  - _self_
+  - /augmentation@synthetic_augmentation: synthetic
+  - /augmentation@real_augmentation: real
+
 _target_: deepfont.data.config.PretrainDataConfig
 
 # --- Data ---
