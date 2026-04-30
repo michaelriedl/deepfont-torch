@@ -11,11 +11,11 @@ shear_bounds: [-3, 3]
 blur_limit: [0.5, 1.0]
 noise_mean_range: [0.0, 0.0]
 noise_std_range: [0.008, 0.016]
-rot_flip_prob: 0.5
-invert_prob: 0.5
+rot_flip_prob: 0.0
+invert_prob: 0.0
 affine_prob: 1.0
 blur_prob: 1.0
-brightness_contrast_prob: 1.0
+brightness_contrast_prob: 0.0
 noise_prob: 1.0
 gradient_prob: 1.0
 gradient_fg_range: [140, 220]
