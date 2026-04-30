@@ -9,8 +9,7 @@ a silent regression.
 Test classes:
     TestConstants                       -- module-level hyper-parameter values
     TestAddGrayscaleGradient            -- standalone NumPy gradient function
-    TestRandomWidthScale                -- custom albumentations width-only scaling transform
-    TestResizeHeightSqueezeWidth        -- custom DualTransform for height + width resize
+    TestTargetAspectRatioResize         -- aspect-ratio-driven resize transform
     TestAugmentationPipelineDispatch    -- dispatcher routing and error handling
     TestSyntheticPipeline               -- end-to-end synthetic image pipeline
     TestRealPipeline                    -- end-to-end real image pipeline
@@ -19,13 +18,10 @@ Test classes:
                                            and import paths that have historically changed
 """
 
-import inspect
-
 import cv2
 import numpy as np
 import pytest
 import albumentations as A  # noqa: N812
-from albumentations import RandomScale
 from albumentations.core.type_definitions import Targets
 from albumentations.core.transforms_interface import DualTransform
 from albumentations.augmentations.geometric.functional import resize
@@ -33,18 +29,19 @@ from albumentations.augmentations.geometric.functional import resize
 from deepfont.data.augmentations import (
     BLUR_LIMIT,
     IMAGE_SIZE,
-    SCALE_LIMIT,
     SHEAR_BOUNDS,
     ROT_FLIP_PROB,
     ROTATE_BOUNDS,
-    SQUEEZE_RATIO,
     NOISE_STD_RANGE,
     GRADIENT_A_RANGE,
     NOISE_MEAN_RANGE,
     GRADIENT_BG_RANGE,
     GRADIENT_FG_RANGE,
-    RandomWidthScale,
-    ResizeHeightSqueezeWidth,
+    ASPECT_RATIO_LOW_EVAL,
+    ASPECT_RATIO_HIGH_EVAL,
+    ASPECT_RATIO_LOW_TRAIN,
+    ASPECT_RATIO_HIGH_TRAIN,
+    TargetAspectRatioResize,
     eval_pipeline,
     augmentation_pipeline,
     add_grayscale_gradient,
@@ -88,11 +85,19 @@ class TestConstants:
     def test_image_size(self):
         assert IMAGE_SIZE == 105
 
-    def test_squeeze_ratio(self):
-        assert SQUEEZE_RATIO == pytest.approx(1 / 2.5)
+    def test_aspect_ratio_low_train(self):
+        # 2.5 * 5/6, matching the paper's training-time post-squeeze AR.
+        assert ASPECT_RATIO_LOW_TRAIN == pytest.approx(2.5 * 5 / 6)
 
-    def test_scale_limit(self):
-        assert SCALE_LIMIT == pytest.approx(0.4)
+    def test_aspect_ratio_high_train(self):
+        # 2.5 * 7/6, matching the paper's training-time post-squeeze AR.
+        assert ASPECT_RATIO_HIGH_TRAIN == pytest.approx(2.5 * 7 / 6)
+
+    def test_aspect_ratio_low_eval(self):
+        assert ASPECT_RATIO_LOW_EVAL == pytest.approx(1.5)
+
+    def test_aspect_ratio_high_eval(self):
+        assert ASPECT_RATIO_HIGH_EVAL == pytest.approx(3.5)
 
     def test_rotate_bounds(self):
         assert ROTATE_BOUNDS == (-3, 3)
@@ -166,97 +171,119 @@ class TestAddGrayscaleGradient:
         assert result.shape == img.shape
 
 
-# RandomWidthScale
+# TargetAspectRatioResize
 
 
-class TestRandomWidthScale:
-    """Tests for the width only scaling transform."""
-
-    def test_is_subclass_of_random_scale(self):
-        transform = RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0)
-        assert isinstance(transform, RandomScale)
-
-    def test_height_is_always_preserved(self, wide_image):
-        transform = RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0)
-        result = transform.apply(wide_image, scale=1.0, interpolation=cv2.INTER_LINEAR)
-        assert result.shape[0] == wide_image.shape[0]
-
-    def test_height_preserved_with_upscaling(self, wide_image):
-        transform = RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0)
-        result = transform.apply(wide_image, scale=1.15, interpolation=cv2.INTER_LINEAR)
-        assert result.shape[0] == wide_image.shape[0]
-
-    def test_height_preserved_with_downscaling(self, wide_image):
-        transform = RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0)
-        result = transform.apply(wide_image, scale=0.85, interpolation=cv2.INTER_LINEAR)
-        assert result.shape[0] == wide_image.shape[0]
-
-    def test_width_scales_proportionally(self, wide_image):
-        transform = RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0)
-        result = transform.apply(wide_image, scale=1.1, interpolation=cv2.INTER_LINEAR)
-        expected_width = int(wide_image.shape[1] * 1.1)
-        assert result.shape[1] == expected_width
-
-    def test_width_never_below_height(self):
-        # Height=80, Width=50: downscaling would produce width < height.
-        narrow = np.zeros((80, 50), dtype=np.uint8)
-        transform = RandomWidthScale(scale_limit=0.5, p=1.0)
-        result = transform.apply(narrow, scale=0.5, interpolation=cv2.INTER_LINEAR)
-        assert result.shape[1] >= result.shape[0]
-
-    def test_works_inside_compose(self, wide_image):
-        pipeline = A.Compose([RandomWidthScale(scale_limit=SCALE_LIMIT, p=1.0)])
-        result = pipeline(image=wide_image)["image"]
-        assert result.shape[0] == wide_image.shape[0]
-        assert result.shape[1] >= result.shape[0]
-
-
-# ResizeHeightSqueezeWidth
-
-
-class TestResizeHeightSqueezeWidth:
-    """Tests for the combined height resize and width squeeze DualTransform."""
+class TestTargetAspectRatioResize:
+    """Tests for the aspect-ratio-driven resize DualTransform."""
 
     def test_is_subclass_of_dual_transform(self):
-        transform = ResizeHeightSqueezeWidth(height=IMAGE_SIZE, width_scale=SQUEEZE_RATIO)
+        transform = TargetAspectRatioResize(
+            height=IMAGE_SIZE,
+            aspect_ratio_low=ASPECT_RATIO_LOW_TRAIN,
+            aspect_ratio_high=ASPECT_RATIO_HIGH_TRAIN,
+        )
         assert isinstance(transform, DualTransform)
 
-    def test_output_height_equals_target(self, wide_image):
-        transform = ResizeHeightSqueezeWidth(height=IMAGE_SIZE, width_scale=SQUEEZE_RATIO, p=1.0)
-        result = transform.apply(wide_image, interpolation=cv2.INTER_LINEAR)
-        assert result.shape[0] == IMAGE_SIZE
-
-    def test_width_never_below_target_height(self):
-        # (200, 100): squeezed width = int((105/200)*0.4*100) = 21 < 105, clamped.
-        narrow = np.zeros((200, 100), dtype=np.uint8)
-        transform = ResizeHeightSqueezeWidth(height=IMAGE_SIZE, width_scale=SQUEEZE_RATIO, p=1.0)
-        result = transform.apply(narrow, interpolation=cv2.INTER_LINEAR)
-        assert result.shape[1] >= IMAGE_SIZE
-
-    def test_width_calculation_wide_image(self):
-        # (50, 600): height_scale=105/50=2.1, new_width=int(2.1*0.4*600)=504.
-        img = np.zeros((50, 600), dtype=np.uint8)
-        transform = ResizeHeightSqueezeWidth(height=105, width_scale=0.4, p=1.0)
-        result = transform.apply(img, interpolation=cv2.INTER_LINEAR)
-        expected_width = max(int((105 / 50) * 0.4 * 600), 105)
-        assert result.shape == (105, expected_width)
+    def test_targets_attribute_is_image(self):
+        assert TargetAspectRatioResize._targets == Targets.IMAGE
 
     def test_get_transform_init_args_names(self):
-        transform = ResizeHeightSqueezeWidth(height=IMAGE_SIZE, width_scale=SQUEEZE_RATIO)
+        transform = TargetAspectRatioResize(
+            height=IMAGE_SIZE,
+            aspect_ratio_low=ASPECT_RATIO_LOW_TRAIN,
+            aspect_ratio_high=ASPECT_RATIO_HIGH_TRAIN,
+        )
         assert transform.get_transform_init_args_names() == (
             "height",
-            "width_scale",
+            "aspect_ratio_low",
+            "aspect_ratio_high",
             "interpolation",
         )
 
-    def test_targets_attribute_is_image(self):
-        assert ResizeHeightSqueezeWidth._targets == Targets.IMAGE
+    def test_rejects_aspect_ratio_low_below_one(self):
+        with pytest.raises(ValueError, match="aspect_ratio_low"):
+            TargetAspectRatioResize(
+                height=IMAGE_SIZE, aspect_ratio_low=0.5, aspect_ratio_high=2.0
+            )
+
+    def test_rejects_low_greater_than_high(self):
+        with pytest.raises(ValueError, match="aspect_ratio_low"):
+            TargetAspectRatioResize(
+                height=IMAGE_SIZE, aspect_ratio_low=3.0, aspect_ratio_high=2.0
+            )
+
+    def test_output_height_equals_target(self, wide_image):
+        transform = TargetAspectRatioResize(
+            height=IMAGE_SIZE,
+            aspect_ratio_low=ASPECT_RATIO_LOW_EVAL,
+            aspect_ratio_high=ASPECT_RATIO_HIGH_EVAL,
+            p=1.0,
+        )
+        result = transform(image=wide_image)["image"]
+        assert result.shape[0] == IMAGE_SIZE
+
+    @pytest.mark.parametrize(
+        "shape",
+        [(80, 400), (50, 500), (200, 200), (400, 80), (105, 105), (30, 800)],
+    )
+    def test_output_aspect_ratio_independent_of_input(self, shape):
+        # Regardless of the input aspect ratio the post-resize AR must land
+        # inside the configured [low, high] band - that is the whole point of
+        # this transform.
+        rng = np.random.default_rng(0)
+        img = rng.integers(0, 256, size=shape, dtype=np.uint8)
+        transform = TargetAspectRatioResize(
+            height=IMAGE_SIZE,
+            aspect_ratio_low=ASPECT_RATIO_LOW_EVAL,
+            aspect_ratio_high=ASPECT_RATIO_HIGH_EVAL,
+            p=1.0,
+        )
+        for _ in range(20):
+            out = transform(image=img)["image"]
+            ar = out.shape[1] / out.shape[0]
+            # Allow 1 pixel of rounding slack at each end.
+            assert ar >= ASPECT_RATIO_LOW_EVAL - 1.0 / IMAGE_SIZE
+            assert ar <= ASPECT_RATIO_HIGH_EVAL + 1.0 / IMAGE_SIZE
+
+    def test_aspect_ratio_distribution_is_uniform(self):
+        # Drawing many crops from a square input, the realized aspect ratios
+        # should cover most of the configured band rather than collapsing to
+        # one value (regression guard against a silent fixed-ratio resize).
+        rng = np.random.default_rng(0)
+        img = rng.integers(0, 256, size=(200, 200), dtype=np.uint8)
+        transform = TargetAspectRatioResize(
+            height=IMAGE_SIZE,
+            aspect_ratio_low=ASPECT_RATIO_LOW_EVAL,
+            aspect_ratio_high=ASPECT_RATIO_HIGH_EVAL,
+            p=1.0,
+        )
+        ars = []
+        for _ in range(200):
+            out = transform(image=img)["image"]
+            ars.append(out.shape[1] / out.shape[0])
+        ars = np.array(ars)
+        band = ASPECT_RATIO_HIGH_EVAL - ASPECT_RATIO_LOW_EVAL
+        # At least 70% of the configured band should be observed.
+        observed_band = ars.max() - ars.min()
+        assert observed_band >= 0.7 * band
 
     def test_works_inside_compose(self, wide_image):
-        pipeline = A.Compose([ResizeHeightSqueezeWidth(IMAGE_SIZE, SQUEEZE_RATIO, p=1.0)])
+        pipeline = A.Compose(
+            [
+                TargetAspectRatioResize(
+                    height=IMAGE_SIZE,
+                    aspect_ratio_low=ASPECT_RATIO_LOW_TRAIN,
+                    aspect_ratio_high=ASPECT_RATIO_HIGH_TRAIN,
+                    p=1.0,
+                )
+            ]
+        )
         result = pipeline(image=wide_image)["image"]
         assert result.shape[0] == IMAGE_SIZE
-        assert result.shape[1] >= IMAGE_SIZE
+        ar = result.shape[1] / result.shape[0]
+        assert ar >= ASPECT_RATIO_LOW_TRAIN - 1.0 / IMAGE_SIZE
+        assert ar <= ASPECT_RATIO_HIGH_TRAIN + 1.0 / IMAGE_SIZE
 
 
 # augmentation_pipeline dispatcher
@@ -361,7 +388,7 @@ class TestEvalPipeline:
         assert int(result.max()) <= 255
 
     def test_crops_are_stochastic(self, wide_image):
-        # At 40% width scaling, 10 crops of a natural image should not all be identical.
+        # 10 crops from a non-trivial image should not all be identical.
         result = eval_pipeline(wide_image, 10)
         all_same = all(np.array_equal(result[0], result[i]) for i in range(1, 10))
         assert not all_same
@@ -404,10 +431,6 @@ class TestAlbumentationsAPIContract:
     def test_targets_importable_from_core_type_definitions(self):
         """albumentations.core.type_definitions.Targets must exist."""
         assert Targets is not None
-
-    def test_random_scale_importable_from_albumentations(self):
-        """albumentations.RandomScale must be directly importable."""
-        assert RandomScale is not None
 
     # Transform availability
 
@@ -498,31 +521,3 @@ class TestAlbumentationsAPIContract:
         img = np.zeros((200, 300), dtype=np.uint8)
         result = t(image=img)["image"]
         assert result.shape == (IMAGE_SIZE, IMAGE_SIZE)
-
-    # RandomScale.apply() signature
-
-    def test_random_scale_apply_signature_has_scale_param(self):
-        """RandomScale.apply() must accept a 'scale' parameter.
-
-        RandomWidthScale overrides apply() and relies on receiving 'scale' as a
-        keyword argument from the albumentations dispatch machinery. If the parent
-        class renames this parameter the override will silently stop working.
-        """
-        sig = inspect.signature(RandomScale.apply)
-        assert "scale" in sig.parameters
-
-    def test_random_scale_apply_passes_interpolation_via_kwargs(self):
-        """RandomScale.apply() passes interpolation through **params in albumentations>=2.x.
-
-        The parent passes 'interpolation' as a keyword argument via **params, and our
-        RandomWidthScale.apply() override captures it as an explicit named parameter.
-        This test verifies both sides of that contract so a future signature change is
-        caught immediately.
-        """
-        # Parent must accept **params so that interpolation can flow through.
-        parent_sig = inspect.signature(RandomScale.apply)
-        assert "params" in parent_sig.parameters
-
-        # Our override must accept **params so that interpolation flows through.
-        override_sig = inspect.signature(RandomWidthScale.apply)
-        assert "params" in override_sig.parameters

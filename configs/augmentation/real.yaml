@@ -1,11 +1,15 @@
 # Configuration for RealAugmentationConfig.
 # Hyperparameters for the real-image augmentation pipeline.
+#
+# aspect_ratio_low/high control the post-resize width/height of every patch
+# (drawn uniformly per image), matching the synthetic pipeline so the two
+# domains see the same geometric distribution.
 
 _target_: deepfont.data.config.RealAugmentationConfig
 
 image_size: 105
-squeeze_ratio: 0.4  # 1 / 2.5
-scale_limit: 0.4
+aspect_ratio_low: 2.0833333333333335   # 2.5 * 5 / 6
+aspect_ratio_high: 2.9166666666666665  # 2.5 * 7 / 6
 rotate_bounds: [-3, 3]
 shear_bounds: [-3, 3]
 rot_flip_prob: 0.0
