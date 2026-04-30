@@ -115,7 +115,7 @@ class TestConstants:
         assert NOISE_STD_RANGE == (0.008, 0.016)
 
     def test_rot_flip_prob(self):
-        assert ROT_FLIP_PROB == pytest.approx(0.5)
+        assert ROT_FLIP_PROB == pytest.approx(0.0)
 
     def test_gradient_fg_range(self):
         assert GRADIENT_FG_RANGE == (140, 220)
