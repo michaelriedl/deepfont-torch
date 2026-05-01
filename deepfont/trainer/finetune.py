@@ -301,10 +301,15 @@ class FinetuneTrainer(BaseTrainer):
 
                 logits = model(crops_flat)  # (B*N, num_classes)
 
-                # Average logits across crops then classify
-                avg_logits = logits.view(b, n, -1).mean(dim=1)  # (B, num_classes)
+                # Average softmax probabilities across crops, per the DeepFont
+                # paper Section 3.1: "we average all fifteen softmax vectors to
+                # determine the final classification result of the test image".
+                # Averaging softmax (not logits) downweights overconfident
+                # outlier crops and is the spec-compliant TTA combiner.
+                probs = logits.softmax(dim=-1)  # (B*N, num_classes)
+                avg_probs = probs.view(b, n, -1).mean(dim=1)  # (B, num_classes)
 
-                top5 = avg_logits.topk(5, dim=1).indices  # (B, 5)
+                top5 = avg_probs.topk(5, dim=1).indices  # (B, 5)
                 correct_top1 += (top5[:, 0] == labels).sum().item()
                 correct_top5 += (top5 == labels.unsqueeze(1)).any(dim=1).sum().item()
                 total += b
