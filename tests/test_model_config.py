@@ -240,9 +240,9 @@ class TestDeepFontConfigDefaults:
         """Default pool kernel size is 2."""
         assert DeepFontConfig().pool_kernel_size == 2
 
-    def test_use_encoder_batch_norm_default(self):
-        """Default classifier encoder uses batch normalization."""
-        assert DeepFontConfig().use_encoder_batch_norm is True
+    def test_encoder_norm_type_default(self):
+        """Default classifier encoder uses LRN per paper Fig. 5."""
+        assert DeepFontConfig().encoder_norm_type == "lrn"
 
     # Convolutional feature layers
 
@@ -258,9 +258,9 @@ class TestDeepFontConfigDefaults:
         """Default conv kernel size is 3."""
         assert DeepFontConfig().conv_kernel_size == 3
 
-    def test_use_conv_batch_norm_default(self):
-        """Default conv layers use batch normalization."""
-        assert DeepFontConfig().use_conv_batch_norm is True
+    def test_conv_norm_type_default(self):
+        """Default conv layers have no normalization per paper Fig. 5."""
+        assert DeepFontConfig().conv_norm_type == "none"
 
     # Fully-connected head
 
@@ -306,13 +306,27 @@ class TestDeepFontConfigValidation:
         """conv_channels can be overridden."""
         assert _df_config(conv_channels=128).conv_channels == 128
 
-    def test_custom_use_encoder_batch_norm_disabled(self):
-        """use_encoder_batch_norm can be disabled."""
-        assert _df_config(use_encoder_batch_norm=False).use_encoder_batch_norm is False
+    def test_custom_encoder_norm_type_batch(self):
+        """encoder_norm_type can be set to 'batch'."""
+        assert _df_config(encoder_norm_type="batch").encoder_norm_type == "batch"
 
-    def test_custom_use_conv_batch_norm_disabled(self):
-        """use_conv_batch_norm can be disabled."""
-        assert _df_config(use_conv_batch_norm=False).use_conv_batch_norm is False
+    def test_custom_encoder_norm_type_none(self):
+        """encoder_norm_type can be set to 'none'."""
+        assert _df_config(encoder_norm_type="none").encoder_norm_type == "none"
+
+    def test_invalid_encoder_norm_type_rejected(self):
+        """encoder_norm_type rejects values outside the allowed Literal set."""
+        with pytest.raises(ValidationError):
+            DeepFontConfig(encoder_norm_type="instance")
+
+    def test_custom_conv_norm_type_batch(self):
+        """conv_norm_type can be set to 'batch'."""
+        assert _df_config(conv_norm_type="batch").conv_norm_type == "batch"
+
+    def test_invalid_conv_norm_type_rejected(self):
+        """conv_norm_type rejects values outside the allowed Literal set."""
+        with pytest.raises(ValidationError):
+            DeepFontConfig(conv_norm_type="lrn")
 
     # Field validators: boundary values
 

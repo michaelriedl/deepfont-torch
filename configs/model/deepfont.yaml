@@ -18,13 +18,13 @@ encoder_kernel_sizes: [11, 5]
 encoder_strides: [2, 1]
 encoder_paddings: [0, 2]
 pool_kernel_size: 2
-use_encoder_batch_norm: true
+encoder_norm_type: "lrn"  # "lrn" | "batch" | "none"; paper Fig. 5 uses LRN
 
 # Additional convolutional layers
 num_conv_layers: 3
 conv_channels: 256
 conv_kernel_size: 3
-use_conv_batch_norm: true
+conv_norm_type: "none"  # "none" | "batch"; paper Fig. 5 has no norm here
 
 # Fully-connected classification head
 fc_hidden_dims: [4096, 4096]

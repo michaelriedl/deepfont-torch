@@ -236,11 +236,14 @@ class DeepFontConfig(BaseModel):
         ge=1,
         description="Kernel size for MaxPool2d applied after each encoder conv stage.",
     )
-    use_encoder_batch_norm: bool = Field(
-        default=True,
+    encoder_norm_type: Literal["none", "lrn", "batch"] = Field(
+        default="lrn",
         description=(
-            "If True, add BatchNorm2d after each encoder Conv2d.  The original "
-            "classifier uses batch normalization (True)."
+            "Normalization layer inserted between each encoder Conv2d and the "
+            "subsequent MaxPool2d. 'lrn' uses LocalResponseNorm with the AlexNet "
+            "defaults (size=5, alpha=1e-4, beta=0.75, k=2.0) and matches the "
+            "paper's Fig. 5 architecture. 'batch' uses BatchNorm2d. 'none' "
+            "skips the normalization layer entirely."
         ),
     )
 
@@ -266,9 +269,14 @@ class DeepFontConfig(BaseModel):
             "to preserve spatial dimensions."
         ),
     )
-    use_conv_batch_norm: bool = Field(
-        default=True,
-        description="If True, add BatchNorm2d after each additional conv layer.",
+    conv_norm_type: Literal["none", "batch"] = Field(
+        default="none",
+        description=(
+            "Normalization layer applied after each additional conv layer "
+            "(Conv3/4/5). The paper's Fig. 5 shows no normalization in this "
+            "section ('none'); 'batch' restores the previous BatchNorm2d "
+            "behavior for ablations."
+        ),
     )
 
     # Fully-connected head
