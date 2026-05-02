@@ -259,7 +259,12 @@ class TestCreateModel:
         assert all(p.requires_grad for p in model.parameters())
 
     def test_encoder_conv_weights_frozen_with_encoder_weights_path(self, tmp_path):
-        """Conv weights of encoder[0] and encoder[4] are frozen after weight loading."""
+        """Conv weights of both encoder Conv2d layers are frozen after weight loading.
+
+        Default encoder_norm_type='none' places Conv2d at indices 0 and 3
+        (Conv -> Pool -> ReLU per stage; 3 sublayers). Setting norm_type to
+        'lrn' or 'batch' would shift the second Conv to index 4.
+        """
         encoder_weights = str(tmp_path / "encoder.pt")
         _save_fake_encoder_weights(encoder_weights)
 
@@ -269,8 +274,8 @@ class TestCreateModel:
         frozen = {name for name, p in model.encoder.named_parameters() if not p.requires_grad}
         assert "0.weight" in frozen
         assert "0.bias" in frozen
-        assert "4.weight" in frozen
-        assert "4.bias" in frozen
+        assert "3.weight" in frozen
+        assert "3.bias" in frozen
 
     def test_non_encoder_parts_remain_trainable_with_encoder_weights_path(self, tmp_path):
         """conv_part and fc_part are unaffected by encoder weight loading."""

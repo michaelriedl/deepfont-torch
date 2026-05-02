@@ -237,13 +237,18 @@ class DeepFontConfig(BaseModel):
         description="Kernel size for MaxPool2d applied after each encoder conv stage.",
     )
     encoder_norm_type: Literal["none", "lrn", "batch"] = Field(
-        default="lrn",
+        default="none",
         description=(
             "Normalization layer inserted between each encoder Conv2d and the "
-            "subsequent MaxPool2d. 'lrn' uses LocalResponseNorm with the AlexNet "
-            "defaults (size=5, alpha=1e-4, beta=0.75, k=2.0) and matches the "
-            "paper's Fig. 5 architecture. 'batch' uses BatchNorm2d. 'none' "
-            "skips the normalization layer entirely."
+            "subsequent MaxPool2d. The default 'none' matches the SCAE encoder "
+            "exactly so pretrained Conv2d weights load without an activation-"
+            "scale mismatch. 'lrn' uses LocalResponseNorm with the AlexNet "
+            "defaults (size=5, alpha=1e-4, beta=0.75, k=2.0); the paper's Fig. 5 "
+            "shows two such layers in the encoder, but using them with our "
+            "no-LRN SCAE pretraining requires retraining the SCAE or raising "
+            "the finetune learning rate. 'batch' uses BatchNorm2d, which trains "
+            "well at the paper's LR but adds gamma/beta parameters not in the "
+            "paper architecture."
         ),
     )
 

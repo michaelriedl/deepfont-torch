@@ -401,10 +401,17 @@ class TestDeepFontArchitecture:
         n_conv = _count_layer_types(model.encoder, nn.Conv2d)
         assert n_conv == len(config.encoder_channels)
 
-    def test_encoder_has_lrn_by_default(self):
-        """Default encoder uses LocalResponseNorm to match paper Fig. 5."""
+    def test_encoder_has_no_norm_by_default(self):
+        """Default encoder has no normalization layer, matching the SCAE."""
         config = _small_df_config()
-        assert config.encoder_norm_type == "lrn"
+        assert config.encoder_norm_type == "none"
+        model = DeepFont(config)
+        assert _count_layer_types(model.encoder, nn.BatchNorm2d) == 0
+        assert _count_layer_types(model.encoder, nn.LocalResponseNorm) == 0
+
+    def test_encoder_with_lrn(self):
+        """Encoder uses LocalResponseNorm when encoder_norm_type='lrn'."""
+        config = _small_df_config(encoder_norm_type="lrn")
         model = DeepFont(config)
         n_lrn = _count_layer_types(model.encoder, nn.LocalResponseNorm)
         n_bn = _count_layer_types(model.encoder, nn.BatchNorm2d)
@@ -419,13 +426,6 @@ class TestDeepFontArchitecture:
         n_lrn = _count_layer_types(model.encoder, nn.LocalResponseNorm)
         assert n_bn == len(config.encoder_channels)
         assert n_lrn == 0
-
-    def test_encoder_with_no_norm(self):
-        """Encoder omits any normalization when encoder_norm_type='none'."""
-        config = _small_df_config(encoder_norm_type="none")
-        model = DeepFont(config)
-        assert _count_layer_types(model.encoder, nn.BatchNorm2d) == 0
-        assert _count_layer_types(model.encoder, nn.LocalResponseNorm) == 0
 
     def test_conv_part_has_conv_layers(self):
         """conv_part contains Conv2d layers matching num_conv_layers."""

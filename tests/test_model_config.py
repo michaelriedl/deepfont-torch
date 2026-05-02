@@ -241,8 +241,8 @@ class TestDeepFontConfigDefaults:
         assert DeepFontConfig().pool_kernel_size == 2
 
     def test_encoder_norm_type_default(self):
-        """Default classifier encoder uses LRN per paper Fig. 5."""
-        assert DeepFontConfig().encoder_norm_type == "lrn"
+        """Default classifier encoder has no normalization, matching the SCAE."""
+        assert DeepFontConfig().encoder_norm_type == "none"
 
     # Convolutional feature layers
 

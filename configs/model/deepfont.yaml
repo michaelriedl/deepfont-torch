@@ -18,7 +18,7 @@ encoder_kernel_sizes: [11, 5]
 encoder_strides: [2, 1]
 encoder_paddings: [0, 2]
 pool_kernel_size: 2
-encoder_norm_type: "lrn"  # "lrn" | "batch" | "none"; paper Fig. 5 uses LRN
+encoder_norm_type: "none"  # "none" | "lrn" | "batch"; default 'none' matches the no-norm SCAE encoder for clean weight transfer
 
 # Additional convolutional layers
 num_conv_layers: 3
