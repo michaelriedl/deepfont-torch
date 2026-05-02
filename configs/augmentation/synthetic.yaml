@@ -1,11 +1,16 @@
 # Configuration for SyntheticAugmentationConfig.
 # Hyperparameters for the synthetic-image augmentation pipeline.
+#
+# aspect_ratio_low/high control the post-resize width/height of every patch
+# (drawn uniformly per image). The defaults match the DeepFont paper's
+# training-time spec: a constant 2.5x squeeze (Section 3.1) combined with the
+# per-image jitter Uniform[5/6, 7/6] from augmentation 6, giving Uniform[2.083, 2.917].
 
 _target_: deepfont.data.config.SyntheticAugmentationConfig
 
 image_size: 105
-squeeze_ratio: 0.4  # 1 / 2.5
-scale_limit: 0.4
+aspect_ratio_low: 2.0833333333333335   # 2.5 * 5 / 6
+aspect_ratio_high: 2.9166666666666665  # 2.5 * 7 / 6
 rotate_bounds: [-3, 3]
 shear_bounds: [-3, 3]
 blur_limit: [0.5, 1.0]

@@ -1,8 +1,13 @@
 # Configuration for EvalAugmentationConfig.
 # Hyperparameters for the eval (TTA) augmentation pipeline.
+#
+# aspect_ratio_low/high define the per-crop post-resize width/height ratio.
+# The defaults match the DeepFont paper's test-time procedure (Section 3.1:
+# "squeezed in width by three different random ratios, all drawn from a
+# uniform distribution between 1.5 and 3.5").
 
 _target_: deepfont.data.config.EvalAugmentationConfig
 
 image_size: 105
-squeeze_ratio: 0.4  # 1 / 2.5
-scale_limit: 0.4
+aspect_ratio_low: 1.5
+aspect_ratio_high: 3.5

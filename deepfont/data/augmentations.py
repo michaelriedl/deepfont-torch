@@ -3,25 +3,32 @@ from typing import Any, Literal
 import cv2
 import numpy as np
 import albumentations as A  # noqa: N812
-from pydantic import Field, BaseModel, ConfigDict
-from albumentations import RandomScale
+from pydantic import Field, BaseModel, ConfigDict, model_validator
 from albumentations.core.type_definitions import Targets
 from albumentations.core.transforms_interface import DualTransform
 from albumentations.augmentations.geometric.functional import resize
 
 IMAGE_SIZE = 105
-SQUEEZE_RATIO = 1 / 2.5
-SCALE_LIMIT = 0.4
+# Training-time aspect ratio bounds. The DeepFont paper combines a constant
+# 2.5x squeeze (Section 3.1) with a per-image jitter drawn from Uniform[5/6, 7/6]
+# (Section 2.3, augmentation 6), giving a post-squeeze width-to-height ratio
+# of Uniform[2.5*5/6, 2.5*7/6] = Uniform[2.083, 2.917].
+ASPECT_RATIO_LOW_TRAIN = 2.5 * 5 / 6
+ASPECT_RATIO_HIGH_TRAIN = 2.5 * 7 / 6
+# Eval-time aspect ratio bounds (Section 3.1, "Testing Details": squeeze
+# ratios drawn from Uniform[1.5, 3.5]).
+ASPECT_RATIO_LOW_EVAL = 1.5
+ASPECT_RATIO_HIGH_EVAL = 3.5
 ROTATE_BOUNDS = (-3, 3)
 SHEAR_BOUNDS = (-3, 3)
 BLUR_LIMIT = (0.5, 1.0)
 NOISE_MEAN_RANGE = (0.0, 0.0)
 NOISE_STD_RANGE = (0.008, 0.016)
-ROT_FLIP_PROB = 0.5
-INVERT_PROB = 0.5
+ROT_FLIP_PROB = 0.0
+INVERT_PROB = 0.0
 AFFINE_PROB = 1.0
 BLUR_PROB = 1.0
-BRIGHTNESS_CONTRAST_PROB = 1.0
+BRIGHTNESS_CONTRAST_PROB = 0.0
 NOISE_PROB = 1.0
 GRADIENT_PROB = 1.0
 GRADIENT_FG_RANGE = (140, 220)
@@ -43,10 +50,32 @@ class _AugmentationConfigBase(BaseModel):
         """Return a copy of this config with every *_prob field set to 0.
 
         The base ``model_copy`` keeps non-probability fields (image size,
-        scale limits, etc.) unchanged.
+        aspect-ratio bounds, etc.) unchanged.
         """
         updates = {name: 0.0 for name in self.__class__.model_fields if name.endswith("_prob")}
         return self.model_copy(update=updates)
+
+    @model_validator(mode="after")
+    def _validate_aspect_ratio_bounds(self):
+        """Ensure aspect_ratio_low is at least 1.0 and not greater than _high.
+
+        ``aspect_ratio_low >= 1.0`` is required because the downstream
+        ``RandomCrop`` step assumes the post-resize width is at least the
+        target height; values below 1 would force a clamp and silently
+        break the configured distribution.
+        """
+        low = getattr(self, "aspect_ratio_low", None)
+        high = getattr(self, "aspect_ratio_high", None)
+        if low is None or high is None:
+            return self
+        if low < 1.0:
+            raise ValueError(
+                f"aspect_ratio_low={low} must be >= 1.0; values below 1 would "
+                f"clamp at the target height and silently flatten the distribution."
+            )
+        if low > high:
+            raise ValueError(f"aspect_ratio_low={low} must be <= aspect_ratio_high={high}.")
+        return self
 
 
 class SyntheticAugmentationConfig(_AugmentationConfigBase):
@@ -62,15 +91,21 @@ class SyntheticAugmentationConfig(_AugmentationConfigBase):
         gt=0,
         description="Target output crop size (square) in pixels.",
     )
-    squeeze_ratio: float = Field(
-        default=SQUEEZE_RATIO,
-        gt=0.0,
-        description="Width-squeeze factor used by ResizeHeightSqueezeWidth.",
+    aspect_ratio_low: float = Field(
+        default=ASPECT_RATIO_LOW_TRAIN,
+        ge=1.0,
+        description=(
+            "Inclusive lower bound on the post-resize width/height ratio drawn "
+            "uniformly per image. Must be >= 1.0."
+        ),
     )
-    scale_limit: float = Field(
-        default=SCALE_LIMIT,
-        ge=0.0,
-        description="Random width-scale limit used by RandomWidthScale.",
+    aspect_ratio_high: float = Field(
+        default=ASPECT_RATIO_HIGH_TRAIN,
+        ge=1.0,
+        description=(
+            "Inclusive upper bound on the post-resize width/height ratio drawn "
+            "uniformly per image. Must be >= aspect_ratio_low."
+        ),
     )
     rotate_bounds: tuple[float, float] = Field(
         default=ROTATE_BOUNDS,
@@ -160,15 +195,21 @@ class RealAugmentationConfig(_AugmentationConfigBase):
         gt=0,
         description="Target output crop size (square) in pixels.",
     )
-    squeeze_ratio: float = Field(
-        default=SQUEEZE_RATIO,
-        gt=0.0,
-        description="Width-squeeze factor used by ResizeHeightSqueezeWidth.",
+    aspect_ratio_low: float = Field(
+        default=ASPECT_RATIO_LOW_TRAIN,
+        ge=1.0,
+        description=(
+            "Inclusive lower bound on the post-resize width/height ratio drawn "
+            "uniformly per image. Must be >= 1.0."
+        ),
     )
-    scale_limit: float = Field(
-        default=SCALE_LIMIT,
-        ge=0.0,
-        description="Random width-scale limit used by RandomWidthScale.",
+    aspect_ratio_high: float = Field(
+        default=ASPECT_RATIO_HIGH_TRAIN,
+        ge=1.0,
+        description=(
+            "Inclusive upper bound on the post-resize width/height ratio drawn "
+            "uniformly per image. Must be >= aspect_ratio_low."
+        ),
     )
     rotate_bounds: tuple[float, float] = Field(
         default=ROTATE_BOUNDS,
@@ -216,15 +257,21 @@ class EvalAugmentationConfig(_AugmentationConfigBase):
         gt=0,
         description="Target output crop size (square) in pixels.",
     )
-    squeeze_ratio: float = Field(
-        default=SQUEEZE_RATIO,
-        gt=0.0,
-        description="Width-squeeze factor used by ResizeHeightSqueezeWidth.",
+    aspect_ratio_low: float = Field(
+        default=ASPECT_RATIO_LOW_EVAL,
+        ge=1.0,
+        description=(
+            "Inclusive lower bound on the post-resize width/height ratio drawn "
+            "uniformly per crop. Must be >= 1.0."
+        ),
     )
-    scale_limit: float = Field(
-        default=SCALE_LIMIT,
-        ge=0.0,
-        description="Random width-scale limit used by RandomWidthScale.",
+    aspect_ratio_high: float = Field(
+        default=ASPECT_RATIO_HIGH_EVAL,
+        ge=1.0,
+        description=(
+            "Inclusive upper bound on the post-resize width/height ratio drawn "
+            "uniformly per crop. Must be >= aspect_ratio_low."
+        ),
     )
 
 
@@ -237,14 +284,14 @@ def add_grayscale_gradient(
     """Applies directional gradient shading that faithfully replicates affine2d.apply2.
 
     The legacy DeepFont C extension (affine2d.so) applies gradient shading in two steps:
-      1. Intensity remap: pixel values are linearly mapped from [0, 255] → [bg, fg],
+      1. Intensity remap: pixel values are linearly mapped from [0, 255] to [bg, fg],
          so dark pixels get the background tone and bright pixels get the foreground tone.
       2. Multiplicative spatial gradient: a linear scale centered on the image is applied
-         in a random direction θ, with amplitude controlled by `a`.
+         in a random direction theta, with amplitude controlled by `a`.
 
     Combined formula per pixel at (col, row):
         normalized = pixel * (fg - bg) / 255 + bg
-        grad_pos   = (col - w/2) * cos(θ) + (row - h/2) * sin(θ)
+        grad_pos   = (col - w/2) * cos(theta) + (row - h/2) * sin(theta)
         scale      = 1.0 + a * grad_pos / min(h, w)
         output     = normalized * scale
 
@@ -281,75 +328,32 @@ def add_grayscale_gradient(
     return np.clip(normalized * scale, 0, 255).astype(original_dtype)
 
 
-class RandomWidthScale(RandomScale):
-    """Randomly scales only the width of an image while preserving height.
+class TargetAspectRatioResize(DualTransform):
+    """Resize an image so its post-resize width/height ratio is a target value.
 
-    This augmentation inherits from albumentations' RandomScale but modifies the behavior
-    to only scale the image width, keeping the height constant. This is useful for
-    simulating variations in character spacing or aspect ratios while maintaining a
-    consistent vertical dimension.
+    The output height is fixed to ``height``; the output width is drawn per
+    application as ``round(height * r)`` where ``r ~ Uniform[low, high]``.
+    This makes the post-resize aspect ratio independent of the input image's
+    dimensions and matches the DeepFont paper's test-time procedure
+    (Section 3.1: "squeezed in width by three different random ratios, all
+    drawn from a uniform distribution between 1.5 and 3.5") and training-time
+    procedure (the constant 2.5 squeeze combined with the [5/6, 7/6] jitter
+    of augmentation 6, giving Uniform[2.083, 2.917]).
 
-    The width is scaled by a random factor, but will never be smaller than the height
-    to avoid overly compressed images.
-
-    Inherits all parameters from albumentations.RandomScale, including:
-        - scale_limit: The range for random scaling (e.g., 0.15 means ±15%)
-        - interpolation: OpenCV interpolation method
-        - p: Probability of applying the transform
-
-    Note:
-        This class only overrides the apply method to implement width-only scaling.
-    """
-
-    def apply(
-        self,
-        img: np.ndarray,
-        scale: float,
-        **params: Any,
-    ) -> np.ndarray:
-        interpolation = params.get("interpolation", cv2.INTER_LINEAR)
-        height, width = img.shape[:2]
-        new_size = int(height), max(int(width * scale), int(height))
-        return resize(img, new_size, interpolation)
-
-
-class ResizeHeightSqueezeWidth(DualTransform):
-    """Resizes an image to a specified height while applying a scaling factor to the width.
-
-    This transform is particularly useful for text and font images where maintaining a
-    consistent height is important, but the width may need to be compressed or expanded.
-    The transform first resizes the image to the target height, then applies a width
-    scaling factor to create the final dimensions.
-
-    The width is never allowed to become smaller than the height, preventing overly
-    compressed aspect ratios. This ensures that characters remain readable even after
-    aggressive width squeezing.
-
-    This is a DualTransform, meaning it can be applied to both images and masks in
-    segmentation tasks.
+    The earlier two-step pipeline (ResizeHeightSqueezeWidth then
+    RandomWidthScale) inadvertently made the post-resize aspect ratio depend
+    on the input aspect ratio, so the configured distribution only matched
+    the paper for one specific input aspect ratio.
 
     Args:
-        height: The desired height of the output image in pixels. The output will
-            always have exactly this height.
-        width_scale: The scaling factor to apply to the width. For example, 0.5 will
-            compress the width to half of what it would be if only height scaling
-            was applied. Values < 1 squeeze the width, values > 1 expand it.
-        interpolation: OpenCV interpolation flag specifying the resampling algorithm.
-            Should be one of: cv2.INTER_NEAREST, cv2.INTER_LINEAR, cv2.INTER_CUBIC,
-            cv2.INTER_AREA, or cv2.INTER_LANCZOS4. Default: cv2.INTER_LINEAR.
-        p: Probability of applying the transform. Only used if always_apply is False.
-            Default: 1.
+        height: Target output height in pixels.
+        aspect_ratio_low: Inclusive lower bound on the post-resize aspect ratio.
+        aspect_ratio_high: Inclusive upper bound on the post-resize aspect ratio.
+        interpolation: OpenCV interpolation flag.
+        p: Probability of applying the transform.
 
     Targets:
         image
-
-    Image types:
-        uint8, float32
-
-    Example:
-        >>> transform = ResizeHeightSqueezeWidth(height=105, width_scale=0.4)
-        >>> # Image of shape (200, 300) becomes approximately (105, 126)
-        >>> # Width would be ~157 with only height scaling, but 0.4 factor makes it 126
     """
 
     _targets = Targets.IMAGE
@@ -357,29 +361,50 @@ class ResizeHeightSqueezeWidth(DualTransform):
     def __init__(
         self,
         height: int,
-        width_scale: float,
+        aspect_ratio_low: float,
+        aspect_ratio_high: float,
         interpolation: int = cv2.INTER_LINEAR,
         p: float = 1,
     ):
         super().__init__(p)
+        if aspect_ratio_low < 1.0:
+            raise ValueError(
+                f"aspect_ratio_low={aspect_ratio_low} must be >= 1.0; values below 1 "
+                f"would clamp at the target height."
+            )
+        if aspect_ratio_low > aspect_ratio_high:
+            raise ValueError(
+                f"aspect_ratio_low={aspect_ratio_low} must be <= "
+                f"aspect_ratio_high={aspect_ratio_high}."
+            )
         self.height = height
-        self.width_scale = width_scale
+        self.aspect_ratio_low = aspect_ratio_low
+        self.aspect_ratio_high = aspect_ratio_high
         self.interpolation = interpolation
+
+    def get_params(self) -> dict[str, Any]:
+        return {
+            "aspect_ratio": float(np.random.uniform(self.aspect_ratio_low, self.aspect_ratio_high))
+        }
 
     def apply(self, img: np.ndarray, *args: Any, **params: Any) -> np.ndarray:
         interpolation = params.get("interpolation", self.interpolation)
-        height, width = img.shape[:2]
-        height_scale = self.height / height
-        # Don't allow the width to be squeezed below the height
-        new_width = max(int(height_scale * self.width_scale * width), self.height)
-        return resize(
-            img,
-            (self.height, new_width),
-            interpolation=interpolation,
-        )
+        aspect_ratio = float(params.get("aspect_ratio", self.aspect_ratio_low))
+        new_width = max(round(self.height * aspect_ratio), self.height)
+        return resize(img, (self.height, new_width), interpolation=interpolation)
 
     def get_transform_init_args_names(self) -> tuple[str, ...]:
-        return "height", "width_scale", "interpolation"
+        return "height", "aspect_ratio_low", "aspect_ratio_high", "interpolation"
+
+
+def _resize_step(cfg) -> TargetAspectRatioResize:
+    """Build the configured TargetAspectRatioResize for any augmentation config."""
+    return TargetAspectRatioResize(
+        height=cfg.image_size,
+        aspect_ratio_low=cfg.aspect_ratio_low,
+        aspect_ratio_high=cfg.aspect_ratio_high,
+        p=1.0,
+    )
 
 
 class SyntheticAugmentationPipeline:
@@ -409,8 +434,7 @@ class SyntheticAugmentationPipeline:
         cfg = self._config
         return A.Compose(
             [
-                ResizeHeightSqueezeWidth(cfg.image_size, cfg.squeeze_ratio, p=1.0),
-                RandomWidthScale(scale_limit=cfg.scale_limit, p=1.0),
+                _resize_step(cfg),
                 A.InvertImg(p=cfg.invert_prob),
                 A.Affine(
                     rotate=cfg.rotate_bounds,
@@ -472,8 +496,7 @@ class RealAugmentationPipeline:
         cfg = self._config
         return A.Compose(
             [
-                ResizeHeightSqueezeWidth(cfg.image_size, cfg.squeeze_ratio, p=1.0),
-                RandomWidthScale(scale_limit=cfg.scale_limit, p=1.0),
+                _resize_step(cfg),
                 A.InvertImg(p=cfg.invert_prob),
                 A.Affine(
                     rotate=cfg.rotate_bounds,
@@ -507,7 +530,7 @@ class EvalAugmentationPipeline:
 
     All transforms run with ``p=1.0`` so there are no per-augmentation
     probabilities. Multiple calls with the same image still produce different
-    random crops because ``RandomWidthScale`` and ``RandomCrop`` are
+    crops because the aspect-ratio resize and the random crop are both
     stochastic.
 
     The pipeline is constructed once in ``__init__`` and applied inside a loop
@@ -523,8 +546,7 @@ class EvalAugmentationPipeline:
         self.config = config if config is not None else EvalAugmentationConfig()
         self._compose = A.Compose(
             [
-                ResizeHeightSqueezeWidth(self.config.image_size, self.config.squeeze_ratio, p=1.0),
-                RandomWidthScale(scale_limit=self.config.scale_limit, p=1.0),
+                _resize_step(self.config),
                 A.RandomCrop(self.config.image_size, self.config.image_size, p=1.0),
             ]
         )
@@ -577,20 +599,11 @@ def augmentation_pipeline(
 def eval_pipeline(image: np.ndarray, num_image_crops: int) -> np.ndarray:
     """Creates multiple augmented crops for test-time augmentation during evaluation.
 
-    This pipeline is designed for model evaluation and inference, where test-time
-    augmentation (TTA) can improve prediction robustness. Unlike training pipelines,
-    it uses only geometric augmentations (no color or blur) to create multiple views
-    of the same image. The model predictions on all crops can be averaged or ensembled
-    for more reliable results.
-
-    The augmentation sequence for each crop:
-    1. Height resize with width squeezing (2.5x squeeze factor)
-    2. Random width scaling (±40% variation, more aggressive than training)
-    3. Random cropping to 105x105
-
-    All augmentations are applied with always_apply=True, meaning each crop is
-    guaranteed to be different. No rotation, flip, or photometric augmentations
-    are applied to preserve the image's semantic content.
+    Each crop is generated by sampling a target aspect ratio uniformly from
+    the configured [aspect_ratio_low, aspect_ratio_high] range, resizing the
+    image so the post-resize width/height matches that ratio, then taking a
+    random 105x105 crop. This mirrors the test-time procedure described in
+    Section 3.1 of the DeepFont paper.
 
     Args:
         image: Input image as a NumPy array. Should be a grayscale image with
@@ -608,6 +621,5 @@ def eval_pipeline(image: np.ndarray, num_image_crops: int) -> np.ndarray:
         >>> crops = eval_pipeline(image, num_image_crops=10)
         >>> crops.shape
         (10, 105, 105)
-        >>> # Feed all crops to model and average predictions
     """
     return EvalAugmentationPipeline()(image, num_image_crops)
