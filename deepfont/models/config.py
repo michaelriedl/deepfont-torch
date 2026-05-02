@@ -274,16 +274,6 @@ class DeepFontConfig(BaseModel):
             "to preserve spatial dimensions."
         ),
     )
-    conv_norm_type: Literal["none", "batch"] = Field(
-        default="none",
-        description=(
-            "Normalization layer applied after each additional conv layer "
-            "(Conv3/4/5). The paper's Fig. 5 shows no normalization in this "
-            "section ('none'); 'batch' restores the previous BatchNorm2d "
-            "behavior for ablations."
-        ),
-    )
-
     # Fully-connected head
     fc_hidden_dims: tuple[int, ...] = Field(
         default=(4096, 4096),

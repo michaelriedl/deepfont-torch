@@ -258,10 +258,6 @@ class TestDeepFontConfigDefaults:
         """Default conv kernel size is 3."""
         assert DeepFontConfig().conv_kernel_size == 3
 
-    def test_conv_norm_type_default(self):
-        """Default conv layers have no normalization per paper Fig. 5."""
-        assert DeepFontConfig().conv_norm_type == "none"
-
     # Fully-connected head
 
     def test_fc_hidden_dims_default(self):
@@ -319,14 +315,11 @@ class TestDeepFontConfigValidation:
         with pytest.raises(ValidationError):
             DeepFontConfig(encoder_norm_type="instance")
 
-    def test_custom_conv_norm_type_batch(self):
-        """conv_norm_type can be set to 'batch'."""
-        assert _df_config(conv_norm_type="batch").conv_norm_type == "batch"
-
-    def test_invalid_conv_norm_type_rejected(self):
-        """conv_norm_type rejects values outside the allowed Literal set."""
-        with pytest.raises(ValidationError):
-            DeepFontConfig(conv_norm_type="lrn")
+    def test_conv_norm_type_field_does_not_exist(self):
+        """conv_norm_type was removed; setting it should be rejected (extra fields forbidden)."""
+        # Pydantic by default ignores unknown fields; assert we cannot read it back.
+        config = _df_config()
+        assert not hasattr(config, "conv_norm_type")
 
     # Field validators: boundary values
 

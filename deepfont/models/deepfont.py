@@ -312,6 +312,8 @@ class DeepFont(nn.Module):
 
         # Additional conv layers
         conv_layers: list[nn.Module] = []
+        # Paper Fig. 5 shows Conv3/4/5 with no normalization layer between
+        # them, so conv_part is fixed as Conv2d -> ReLU per stage.
         prev_ch = config.encoder_channels[-1]
         for _ in range(config.num_conv_layers):
             conv_layers.append(
@@ -322,8 +324,6 @@ class DeepFont(nn.Module):
                     padding="same",
                 )
             )
-            if config.conv_norm_type == "batch":
-                conv_layers.append(nn.BatchNorm2d(config.conv_channels))
             conv_layers.append(nn.ReLU())
             prev_ch = config.conv_channels
         self.conv_part = nn.Sequential(*conv_layers)

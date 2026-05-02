@@ -434,20 +434,12 @@ class TestDeepFontArchitecture:
         n_conv = _count_layer_types(model.conv_part, nn.Conv2d)
         assert n_conv == config.num_conv_layers
 
-    def test_conv_part_no_norm_by_default(self):
-        """Default conv_part has no normalization layers (paper Fig. 5)."""
+    def test_conv_part_has_no_normalization(self):
+        """conv_part is fixed as Conv2d -> ReLU per stage (paper Fig. 5)."""
         config = _small_df_config()
-        assert config.conv_norm_type == "none"
         model = DeepFont(config)
         assert _count_layer_types(model.conv_part, nn.BatchNorm2d) == 0
         assert _count_layer_types(model.conv_part, nn.LocalResponseNorm) == 0
-
-    def test_conv_part_with_batch_norm(self):
-        """conv_part includes BatchNorm2d when conv_norm_type='batch'."""
-        config = _small_df_config(conv_norm_type="batch")
-        model = DeepFont(config)
-        n_bn = _count_layer_types(model.conv_part, nn.BatchNorm2d)
-        assert n_bn == config.num_conv_layers
 
     def test_fc_part_has_flatten(self):
         """fc_part starts with a Flatten layer."""
