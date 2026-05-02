@@ -54,7 +54,7 @@ Here we make explicit the architecture of the DeepFont model as reimplemented in
 
 This implementation includes two main models: **DeepFontAE** (autoencoder for unsupervised pretraining) and **DeepFont** (the full classification model). Detailed architecture visualizations are available in [notebooks/model_architectures_visualized.ipynb](notebooks/model_architectures_visualized.ipynb).
 
-> **Note:** Normalization layers (BatchNorm2d or LRN) are supported in both models but are **disabled by default**. The architecture figures below show the models with normalization layers enabled for illustrative purposes.
+> **Note:** The classifier (DeepFont) supports optional normalization layers (BatchNorm2d or LRN) in the encoder, but they are **disabled by default**. The autoencoder (DeepFontAE) does not use normalization layers. The classifier architecture figure below shows the encoder with normalization layers enabled for illustrative purposes.
 
 ### DeepFontAE (Autoencoder)
 
@@ -117,7 +117,7 @@ The full classification model extends the encoder with additional convolutional 
 
 The main architectural differences between the two models:
 
-1. **Normalization:** Both models support optional normalization layers (BatchNorm2d or LRN) after each Conv2d, but normalization is disabled by default. When enabled, this improves training stability and convergence, particularly for the supervised classification task.
+1. **Normalization:** The classifier encoder supports optional normalization layers (BatchNorm2d or LRN) after each Conv2d, disabled by default. The autoencoder encoder does not support normalization layers, keeping the architecture faithful to the paper's pretraining stage.
 
 2. **Purpose:** The autoencoder is trained for reconstruction (unsupervised), while the classifier is trained for font recognition (supervised).
 
