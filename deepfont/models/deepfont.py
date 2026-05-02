@@ -208,7 +208,7 @@ class DeepFontAE(nn.Module):
             strides=config.encoder_strides,
             paddings=config.encoder_paddings,
             pool_kernel_size=config.pool_kernel_size,
-            norm_type="batch" if config.use_batch_norm else "none",
+            norm_type="none",
         )
         self.decoder = _build_decoder(
             out_channels=config.in_channels,
@@ -291,8 +291,7 @@ class DeepFont(nn.Module):
 
         Note:
             The model expects square input images whose size matches
-            config.input_size (default 105).  The encoder includes batch
-            normalization layers by default, unlike the autoencoder version.
+            config.input_size (default 105).
         """
         super().__init__()
         if config is None:
@@ -388,8 +387,8 @@ class DeepFont(nn.Module):
         pretrained features.
 
         The weight mapping handles the structural differences between DeepFontAE
-        (with or without batch norm) and DeepFont (with or without batch norm) by
-        computing the correct index offsets based on whether batch norm is present.
+        (no norm layers) and DeepFont (optionally with norm layers) by computing
+        the correct index offsets based on the classifier's encoder_norm_type.
 
         Args:
             encoder_weights_file: Path to the saved autoencoder model checkpoint (.pt or

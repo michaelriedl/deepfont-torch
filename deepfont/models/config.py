@@ -13,9 +13,9 @@ Architecture summary (paper defaults):
 
 - Input: 1-channel (grayscale) 105x105 patches.
 - Encoder (shared by both models): two convolutional stages, each consisting
-  of Conv2d -> [BatchNorm2d] -> MaxPool2d -> ReLU.  Stage 1 uses 64 filters
-  with an 11x11 kernel at stride 2 (AlexNet-style); stage 2 uses 128 filters
-  with a 5x5 kernel at stride 1 with padding 2.
+  of Conv2d -> MaxPool2d -> ReLU.  Stage 1 uses 64 filters with an 11x11
+  kernel at stride 2 (AlexNet-style); stage 2 uses 128 filters with a 5x5
+  kernel at stride 1 with padding 2.
 - Decoder (autoencoder only): mirrors the encoder using
   Upsample -> ConvTranspose2d -> ReLU in reverse order.
 - Conv part (classifier only): three additional 3x3 conv layers with 256
@@ -45,10 +45,9 @@ class DeepFontAEConfig(BaseModel):
         >>> # Paper defaults
         >>> config = DeepFontAEConfig()
         >>> model = DeepFontAE(config)
-        >>> # Wider first layer, batch-normalized encoder, sigmoid output
+        >>> # Wider first layer with sigmoid output
         >>> config = DeepFontAEConfig(
         ...     encoder_channels=(96, 192),
-        ...     use_batch_norm=True,
         ...     output_activation="sigmoid",
         ... )
         >>> model = DeepFontAE(config)
@@ -97,13 +96,6 @@ class DeepFontAEConfig(BaseModel):
         default=2,
         ge=1,
         description="Kernel size for MaxPool2d applied after each encoder conv stage.",
-    )
-    use_batch_norm: bool = Field(
-        default=False,
-        description=(
-            "If True, add BatchNorm2d after each encoder Conv2d.  The original "
-            "autoencoder does not use batch normalization (False)."
-        ),
     )
 
     # Output

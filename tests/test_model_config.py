@@ -62,10 +62,6 @@ class TestDeepFontAEConfigDefaults:
         """Default pool kernel size is 2."""
         assert DeepFontAEConfig().pool_kernel_size == 2
 
-    def test_use_batch_norm_default(self):
-        """Default autoencoder does not use batch normalization."""
-        assert DeepFontAEConfig().use_batch_norm is False
-
     def test_output_activation_default(self):
         """Default output activation is None (linear output)."""
         assert DeepFontAEConfig().output_activation is None
@@ -105,10 +101,6 @@ class TestDeepFontAEConfigValidation:
     def test_custom_output_activation_relu(self):
         """output_activation accepts 'relu'."""
         assert _ae_config(output_activation="relu").output_activation == "relu"
-
-    def test_custom_use_batch_norm(self):
-        """use_batch_norm can be enabled."""
-        assert _ae_config(use_batch_norm=True).use_batch_norm is True
 
     # Field validators: positive values
 
