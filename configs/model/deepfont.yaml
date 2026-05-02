@@ -18,13 +18,13 @@ encoder_kernel_sizes: [11, 5]
 encoder_strides: [2, 1]
 encoder_paddings: [0, 2]
 pool_kernel_size: 2
-use_encoder_batch_norm: true
+encoder_norm_type: "none"  # "none" | "lrn" | "batch"; default 'none' matches the no-norm SCAE encoder for clean weight transfer
 
-# Additional convolutional layers
+# Additional convolutional layers (Conv3/4/5 — paper Fig. 5 shows no
+# normalization here, so this section is fixed as Conv2d -> ReLU per stage).
 num_conv_layers: 3
 conv_channels: 256
 conv_kernel_size: 3
-use_conv_batch_norm: true
 
 # Fully-connected classification head
 fc_hidden_dims: [4096, 4096]

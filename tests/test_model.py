@@ -40,7 +40,6 @@ def _small_ae_config(**overrides) -> DeepFontAEConfig:
         encoder_strides=(2, 1),
         encoder_paddings=(0, 2),
         pool_kernel_size=2,
-        use_batch_norm=False,
         output_activation=None,
     )
     defaults.update(overrides)
@@ -212,18 +211,11 @@ class TestDeepFontAEArchitecture:
         n_relu = _count_layer_types(model.encoder, nn.ReLU)
         assert n_relu == len(config.encoder_channels)
 
-    def test_encoder_without_batch_norm(self):
-        """Encoder omits BatchNorm2d when use_batch_norm is False."""
-        model = DeepFontAE(_small_ae_config(use_batch_norm=False))
-        n_bn = _count_layer_types(model.encoder, nn.BatchNorm2d)
-        assert n_bn == 0
-
-    def test_encoder_with_batch_norm(self):
-        """Encoder includes BatchNorm2d when use_batch_norm is True."""
-        config = _small_ae_config(use_batch_norm=True)
-        model = DeepFontAE(config)
-        n_bn = _count_layer_types(model.encoder, nn.BatchNorm2d)
-        assert n_bn == len(config.encoder_channels)
+    def test_encoder_has_no_norm_layers(self):
+        """Autoencoder encoder never uses normalization layers."""
+        model = DeepFontAE(_small_ae_config())
+        assert _count_layer_types(model.encoder, nn.BatchNorm2d) == 0
+        assert _count_layer_types(model.encoder, nn.LocalResponseNorm) == 0
 
     def test_decoder_has_conv_transpose_layers(self):
         """Decoder contains ConvTranspose2d layers matching encoder stages."""
@@ -401,19 +393,31 @@ class TestDeepFontArchitecture:
         n_conv = _count_layer_types(model.encoder, nn.Conv2d)
         assert n_conv == len(config.encoder_channels)
 
-    def test_encoder_has_batch_norm_by_default(self):
-        """Encoder includes BatchNorm2d when use_encoder_batch_norm is True."""
-        config = _small_df_config(use_encoder_batch_norm=True)
+    def test_encoder_has_no_norm_by_default(self):
+        """Default encoder has no normalization layer, matching the SCAE."""
+        config = _small_df_config()
+        assert config.encoder_norm_type == "none"
         model = DeepFont(config)
-        n_bn = _count_layer_types(model.encoder, nn.BatchNorm2d)
-        assert n_bn == len(config.encoder_channels)
+        assert _count_layer_types(model.encoder, nn.BatchNorm2d) == 0
+        assert _count_layer_types(model.encoder, nn.LocalResponseNorm) == 0
 
-    def test_encoder_without_batch_norm(self):
-        """Encoder omits BatchNorm2d when use_encoder_batch_norm is False."""
-        config = _small_df_config(use_encoder_batch_norm=False)
+    def test_encoder_with_lrn(self):
+        """Encoder uses LocalResponseNorm when encoder_norm_type='lrn'."""
+        config = _small_df_config(encoder_norm_type="lrn")
+        model = DeepFont(config)
+        n_lrn = _count_layer_types(model.encoder, nn.LocalResponseNorm)
+        n_bn = _count_layer_types(model.encoder, nn.BatchNorm2d)
+        assert n_lrn == len(config.encoder_channels)
+        assert n_bn == 0
+
+    def test_encoder_with_batch_norm(self):
+        """Encoder uses BatchNorm2d when encoder_norm_type='batch'."""
+        config = _small_df_config(encoder_norm_type="batch")
         model = DeepFont(config)
         n_bn = _count_layer_types(model.encoder, nn.BatchNorm2d)
-        assert n_bn == 0
+        n_lrn = _count_layer_types(model.encoder, nn.LocalResponseNorm)
+        assert n_bn == len(config.encoder_channels)
+        assert n_lrn == 0
 
     def test_conv_part_has_conv_layers(self):
         """conv_part contains Conv2d layers matching num_conv_layers."""
@@ -422,19 +426,12 @@ class TestDeepFontArchitecture:
         n_conv = _count_layer_types(model.conv_part, nn.Conv2d)
         assert n_conv == config.num_conv_layers
 
-    def test_conv_part_with_batch_norm(self):
-        """conv_part includes BatchNorm2d when use_conv_batch_norm is True."""
-        config = _small_df_config(use_conv_batch_norm=True)
+    def test_conv_part_has_no_normalization(self):
+        """conv_part is fixed as Conv2d -> ReLU per stage (paper Fig. 5)."""
+        config = _small_df_config()
         model = DeepFont(config)
-        n_bn = _count_layer_types(model.conv_part, nn.BatchNorm2d)
-        assert n_bn == config.num_conv_layers
-
-    def test_conv_part_without_batch_norm(self):
-        """conv_part omits BatchNorm2d when use_conv_batch_norm is False."""
-        config = _small_df_config(use_conv_batch_norm=False)
-        model = DeepFont(config)
-        n_bn = _count_layer_types(model.conv_part, nn.BatchNorm2d)
-        assert n_bn == 0
+        assert _count_layer_types(model.conv_part, nn.BatchNorm2d) == 0
+        assert _count_layer_types(model.conv_part, nn.LocalResponseNorm) == 0
 
     def test_fc_part_has_flatten(self):
         """fc_part starts with a Flatten layer."""
@@ -500,8 +497,7 @@ class TestLoadEncoderWeights:
         model.load_encoder_weights(weights_path)
 
         frozen_names = {name for name, p in model.encoder.named_parameters() if not p.requires_grad}
-        # Default AE has no batch norm -> Conv2d at indices 0 and 3.
-        # Default DeepFont has batch norm -> Conv2d at indices 0 and 4.
+        # Both AE and default classifier have no norm -> Conv2d at indices 0 and 3.
         assert "0.weight" in frozen_names
         assert "0.bias" in frozen_names
 
@@ -547,9 +543,9 @@ class TestLoadEncoderWeights:
         """Weights transfer correctly from AE (no BN) to classifier (with BN)."""
         weights_path = str(tmp_path / "ae.pt")
         # AE without batch norm (default)
-        self._save_ae_weights(weights_path, DeepFontAEConfig(use_batch_norm=False))
-        # Classifier with encoder batch norm (default)
-        config = _small_df_config(use_encoder_batch_norm=True)
+        self._save_ae_weights(weights_path, DeepFontAEConfig())
+        # Classifier with encoder batch norm
+        config = _small_df_config(encoder_norm_type="batch")
         model = DeepFont(config)
         model.load_encoder_weights(weights_path)
 
@@ -559,6 +555,44 @@ class TestLoadEncoderWeights:
         with torch.no_grad():
             out = model(x)
         assert torch.isfinite(out).all()
+
+    def test_ae_without_bn_to_classifier_with_lrn(self, tmp_path):
+        """Weights transfer correctly from AE (no BN) to LRN classifier (paper default)."""
+        weights_path = str(tmp_path / "ae.pt")
+        self._save_ae_weights(weights_path, DeepFontAEConfig())
+        # Classifier with paper-faithful LRN encoder.
+        config = _small_df_config(encoder_norm_type="lrn")
+        model = DeepFont(config)
+        model.load_encoder_weights(weights_path)
+
+        # Conv weights at LRN-encoder positions (0 and 4) match the source AE.
+        ae = DeepFontAE(DeepFontAEConfig())
+        ae_state = torch.load(weights_path, weights_only=True)
+        ae.load_state_dict(ae_state)
+        # Source AE without BN places Conv2d at indices 0 and 3.
+        assert torch.equal(ae.encoder[0].weight.data, model.encoder[0].weight.data)
+        assert torch.equal(ae.encoder[3].weight.data, model.encoder[4].weight.data)
+
+        model.eval()
+        x = _df_input()
+        with torch.no_grad():
+            out = model(x)
+        assert torch.isfinite(out).all()
+
+    def test_ae_without_bn_to_classifier_with_no_norm(self, tmp_path):
+        """Weights transfer correctly from AE (no BN) to no-norm classifier."""
+        weights_path = str(tmp_path / "ae.pt")
+        self._save_ae_weights(weights_path, DeepFontAEConfig())
+        # Both source and destination have no norm: Conv at indices 0 and 3.
+        config = _small_df_config(encoder_norm_type="none")
+        model = DeepFont(config)
+        model.load_encoder_weights(weights_path)
+
+        ae = DeepFontAE(DeepFontAEConfig())
+        ae_state = torch.load(weights_path, weights_only=True)
+        ae.load_state_dict(ae_state)
+        assert torch.equal(ae.encoder[0].weight.data, model.encoder[0].weight.data)
+        assert torch.equal(ae.encoder[3].weight.data, model.encoder[3].weight.data)
 
     def test_missing_weights_file_raises(self):
         """Non-existent weights file raises an error."""

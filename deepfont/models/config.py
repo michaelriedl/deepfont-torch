@@ -13,9 +13,9 @@ Architecture summary (paper defaults):
 
 - Input: 1-channel (grayscale) 105x105 patches.
 - Encoder (shared by both models): two convolutional stages, each consisting
-  of Conv2d -> [BatchNorm2d] -> MaxPool2d -> ReLU.  Stage 1 uses 64 filters
-  with an 11x11 kernel at stride 2 (AlexNet-style); stage 2 uses 128 filters
-  with a 5x5 kernel at stride 1 with padding 2.
+  of Conv2d -> MaxPool2d -> ReLU.  Stage 1 uses 64 filters with an 11x11
+  kernel at stride 2 (AlexNet-style); stage 2 uses 128 filters with a 5x5
+  kernel at stride 1 with padding 2.
 - Decoder (autoencoder only): mirrors the encoder using
   Upsample -> ConvTranspose2d -> ReLU in reverse order.
 - Conv part (classifier only): three additional 3x3 conv layers with 256
@@ -45,10 +45,9 @@ class DeepFontAEConfig(BaseModel):
         >>> # Paper defaults
         >>> config = DeepFontAEConfig()
         >>> model = DeepFontAE(config)
-        >>> # Wider first layer, batch-normalized encoder, sigmoid output
+        >>> # Wider first layer with sigmoid output
         >>> config = DeepFontAEConfig(
         ...     encoder_channels=(96, 192),
-        ...     use_batch_norm=True,
         ...     output_activation="sigmoid",
         ... )
         >>> model = DeepFontAE(config)
@@ -97,13 +96,6 @@ class DeepFontAEConfig(BaseModel):
         default=2,
         ge=1,
         description="Kernel size for MaxPool2d applied after each encoder conv stage.",
-    )
-    use_batch_norm: bool = Field(
-        default=False,
-        description=(
-            "If True, add BatchNorm2d after each encoder Conv2d.  The original "
-            "autoencoder does not use batch normalization (False)."
-        ),
     )
 
     # Output
@@ -236,11 +228,19 @@ class DeepFontConfig(BaseModel):
         ge=1,
         description="Kernel size for MaxPool2d applied after each encoder conv stage.",
     )
-    use_encoder_batch_norm: bool = Field(
-        default=True,
+    encoder_norm_type: Literal["none", "lrn", "batch"] = Field(
+        default="none",
         description=(
-            "If True, add BatchNorm2d after each encoder Conv2d.  The original "
-            "classifier uses batch normalization (True)."
+            "Normalization layer inserted between each encoder Conv2d and the "
+            "subsequent MaxPool2d. The default 'none' matches the SCAE encoder "
+            "exactly so pretrained Conv2d weights load without an activation-"
+            "scale mismatch. 'lrn' uses LocalResponseNorm with the AlexNet "
+            "defaults (size=5, alpha=1e-4, beta=0.75, k=2.0); the paper's Fig. 5 "
+            "shows two such layers in the encoder, but using them with our "
+            "no-LRN SCAE pretraining requires retraining the SCAE or raising "
+            "the finetune learning rate. 'batch' uses BatchNorm2d, which trains "
+            "well at the paper's LR but adds gamma/beta parameters not in the "
+            "paper architecture."
         ),
     )
 
@@ -266,11 +266,6 @@ class DeepFontConfig(BaseModel):
             "to preserve spatial dimensions."
         ),
     )
-    use_conv_batch_norm: bool = Field(
-        default=True,
-        description="If True, add BatchNorm2d after each additional conv layer.",
-    )
-
     # Fully-connected head
     fc_hidden_dims: tuple[int, ...] = Field(
         default=(4096, 4096),

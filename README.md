@@ -54,6 +54,8 @@ Here we make explicit the architecture of the DeepFont model as reimplemented in
 
 This implementation includes two main models: **DeepFontAE** (autoencoder for unsupervised pretraining) and **DeepFont** (the full classification model). Detailed architecture visualizations are available in [notebooks/model_architectures_visualized.ipynb](notebooks/model_architectures_visualized.ipynb).
 
+> **Note:** The classifier (DeepFont) supports optional normalization layers (BatchNorm2d or LRN) in the encoder, but they are **disabled by default**. The autoencoder (DeepFontAE) does not use normalization layers. The classifier architecture figure below shows the encoder with normalization layers enabled for illustrative purposes.
+
 ### DeepFontAE (Autoencoder)
 
 The autoencoder is used for unsupervised pretraining on unlabeled font images. It learns to compress and reconstruct 105×105 grayscale images through an encoder-decoder architecture.
@@ -89,18 +91,18 @@ The full classification model extends the encoder with additional convolutional 
 **Architecture:**
 - **Input:** (1, 105, 105) grayscale images
 - **Stage 1 - Encoder (Feature Extraction):**
-  - Conv2d(64 filters, 11×11 kernel, stride=2) + BatchNorm2d → (64, 48, 48)
+  - Conv2d(64 filters, 11×11 kernel, stride=2) + BatchNorm2d or LRN (optional) → (64, 48, 48)
   - MaxPool2d(2×2) → (64, 24, 24)
   - ReLU activation
-  - Conv2d(128 filters, 5×5 kernel) + BatchNorm2d → (128, 24, 24)
+  - Conv2d(128 filters, 5×5 kernel) + BatchNorm2d or LRN (optional) → (128, 24, 24)
   - MaxPool2d(2×2) → (128, 12, 12)
   - ReLU activation
 - **Stage 2 - Conv Part (Feature Refinement):**
-  - Conv2d(256 filters, 3×3 kernel, padding='same') + BatchNorm2d → (256, 12, 12)
+  - Conv2d(256 filters, 3×3 kernel, padding='same') → (256, 12, 12)
   - ReLU activation
-  - Conv2d(256 filters, 3×3 kernel, padding='same') + BatchNorm2d → (256, 12, 12)
+  - Conv2d(256 filters, 3×3 kernel, padding='same') → (256, 12, 12)
   - ReLU activation
-  - Conv2d(256 filters, 3×3 kernel, padding='same') + BatchNorm2d → (256, 12, 12)
+  - Conv2d(256 filters, 3×3 kernel, padding='same') → (256, 12, 12)
   - ReLU activation
 - **Stage 3 - FC Part (Classification):**
   - Flatten → (36,864)
@@ -115,7 +117,7 @@ The full classification model extends the encoder with additional convolutional 
 
 The main architectural differences between the two models:
 
-1. **Batch Normalization:** The classifier encoder includes BatchNorm2d layers after each Conv2d, while the autoencoder encoder does not. This improves training stability and convergence for the supervised classification task.
+1. **Normalization:** The classifier encoder supports optional normalization layers (BatchNorm2d or LRN) after each Conv2d, disabled by default. The autoencoder encoder does not support normalization layers, keeping the architecture faithful to the paper's pretraining stage.
 
 2. **Purpose:** The autoencoder is trained for reconstruction (unsupervised), while the classifier is trained for font recognition (supervised).
 

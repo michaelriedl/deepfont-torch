@@ -62,10 +62,6 @@ class TestDeepFontAEConfigDefaults:
         """Default pool kernel size is 2."""
         assert DeepFontAEConfig().pool_kernel_size == 2
 
-    def test_use_batch_norm_default(self):
-        """Default autoencoder does not use batch normalization."""
-        assert DeepFontAEConfig().use_batch_norm is False
-
     def test_output_activation_default(self):
         """Default output activation is None (linear output)."""
         assert DeepFontAEConfig().output_activation is None
@@ -105,10 +101,6 @@ class TestDeepFontAEConfigValidation:
     def test_custom_output_activation_relu(self):
         """output_activation accepts 'relu'."""
         assert _ae_config(output_activation="relu").output_activation == "relu"
-
-    def test_custom_use_batch_norm(self):
-        """use_batch_norm can be enabled."""
-        assert _ae_config(use_batch_norm=True).use_batch_norm is True
 
     # Field validators: positive values
 
@@ -240,9 +232,9 @@ class TestDeepFontConfigDefaults:
         """Default pool kernel size is 2."""
         assert DeepFontConfig().pool_kernel_size == 2
 
-    def test_use_encoder_batch_norm_default(self):
-        """Default classifier encoder uses batch normalization."""
-        assert DeepFontConfig().use_encoder_batch_norm is True
+    def test_encoder_norm_type_default(self):
+        """Default classifier encoder has no normalization, matching the SCAE."""
+        assert DeepFontConfig().encoder_norm_type == "none"
 
     # Convolutional feature layers
 
@@ -257,10 +249,6 @@ class TestDeepFontConfigDefaults:
     def test_conv_kernel_size_default(self):
         """Default conv kernel size is 3."""
         assert DeepFontConfig().conv_kernel_size == 3
-
-    def test_use_conv_batch_norm_default(self):
-        """Default conv layers use batch normalization."""
-        assert DeepFontConfig().use_conv_batch_norm is True
 
     # Fully-connected head
 
@@ -306,13 +294,24 @@ class TestDeepFontConfigValidation:
         """conv_channels can be overridden."""
         assert _df_config(conv_channels=128).conv_channels == 128
 
-    def test_custom_use_encoder_batch_norm_disabled(self):
-        """use_encoder_batch_norm can be disabled."""
-        assert _df_config(use_encoder_batch_norm=False).use_encoder_batch_norm is False
+    def test_custom_encoder_norm_type_batch(self):
+        """encoder_norm_type can be set to 'batch'."""
+        assert _df_config(encoder_norm_type="batch").encoder_norm_type == "batch"
 
-    def test_custom_use_conv_batch_norm_disabled(self):
-        """use_conv_batch_norm can be disabled."""
-        assert _df_config(use_conv_batch_norm=False).use_conv_batch_norm is False
+    def test_custom_encoder_norm_type_none(self):
+        """encoder_norm_type can be set to 'none'."""
+        assert _df_config(encoder_norm_type="none").encoder_norm_type == "none"
+
+    def test_invalid_encoder_norm_type_rejected(self):
+        """encoder_norm_type rejects values outside the allowed Literal set."""
+        with pytest.raises(ValidationError):
+            DeepFontConfig(encoder_norm_type="instance")
+
+    def test_conv_norm_type_field_does_not_exist(self):
+        """conv_norm_type was removed; setting it should be rejected (extra fields forbidden)."""
+        # Pydantic by default ignores unknown fields; assert we cannot read it back.
+        config = _df_config()
+        assert not hasattr(config, "conv_norm_type")
 
     # Field validators: boundary values
 

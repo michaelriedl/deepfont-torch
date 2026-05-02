@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 import torch
 import torch.nn as nn
@@ -8,6 +9,33 @@ from .config import DeepFontConfig, DeepFontAEConfig
 # A logger for this file
 logger = logging.getLogger(__name__)
 
+# AlexNet-style LocalResponseNorm hyperparameters. The DeepFont paper does not
+# state these explicitly but cites the AlexNet ImageNet structure (Krizhevsky
+# 2012), which uses these values for its two LRN layers (after Conv1 and
+# Conv2). PyTorch's LocalResponseNorm defaults match except for k, which we
+# override to AlexNet's 2.0.
+LRN_SIZE = 5
+LRN_ALPHA = 1e-4
+LRN_BETA = 0.75
+LRN_K = 2.0
+
+
+def _make_norm_layer(
+    norm_type: Literal["none", "lrn", "batch"],
+    num_channels: int,
+) -> nn.Module | None:
+    """Build the normalization layer for an encoder stage.
+
+    Returns None when norm_type == "none" so the caller can skip appending.
+    """
+    if norm_type == "none":
+        return None
+    if norm_type == "lrn":
+        return nn.LocalResponseNorm(size=LRN_SIZE, alpha=LRN_ALPHA, beta=LRN_BETA, k=LRN_K)
+    if norm_type == "batch":
+        return nn.BatchNorm2d(num_channels)
+    raise ValueError(f"Unknown norm_type '{norm_type}'. Expected 'none', 'lrn', or 'batch'.")
+
 
 def _build_encoder(
     in_channels: int,
@@ -16,11 +44,13 @@ def _build_encoder(
     strides: tuple[int, ...],
     paddings: tuple[int, ...],
     pool_kernel_size: int,
-    use_batch_norm: bool,
+    norm_type: Literal["none", "lrn", "batch"],
 ) -> nn.Sequential:
     """Build a multi-stage convolutional encoder.
 
-    Each stage consists of Conv2d -> [BatchNorm2d] -> MaxPool2d -> ReLU.
+    Each stage consists of Conv2d -> [Norm] -> MaxPool2d -> ReLU, where the
+    Norm layer is LocalResponseNorm, BatchNorm2d, or omitted depending on
+    norm_type. The 'lrn' option matches the paper's Fig. 5 architecture.
 
     Args:
         in_channels: Number of channels in the input image.
@@ -29,7 +59,7 @@ def _build_encoder(
         strides: Stride for each stage's Conv2d.
         paddings: Padding for each stage's Conv2d.
         pool_kernel_size: Kernel size for MaxPool2d after each stage.
-        use_batch_norm: Whether to include BatchNorm2d after each Conv2d.
+        norm_type: Normalization layer type. One of 'none', 'lrn', 'batch'.
 
     Returns:
         An nn.Sequential module implementing the encoder.
@@ -38,8 +68,9 @@ def _build_encoder(
     prev_ch = in_channels
     for ch, k, s, p in zip(channels, kernel_sizes, strides, paddings, strict=True):
         layers.append(nn.Conv2d(prev_ch, ch, kernel_size=k, stride=s, padding=p))
-        if use_batch_norm:
-            layers.append(nn.BatchNorm2d(ch))
+        norm_layer = _make_norm_layer(norm_type, ch)
+        if norm_layer is not None:
+            layers.append(norm_layer)
         layers.append(nn.MaxPool2d(kernel_size=pool_kernel_size))
         layers.append(nn.ReLU())
         prev_ch = ch
@@ -177,7 +208,7 @@ class DeepFontAE(nn.Module):
             strides=config.encoder_strides,
             paddings=config.encoder_paddings,
             pool_kernel_size=config.pool_kernel_size,
-            use_batch_norm=config.use_batch_norm,
+            norm_type="none",
         )
         self.decoder = _build_decoder(
             out_channels=config.in_channels,
@@ -260,8 +291,7 @@ class DeepFont(nn.Module):
 
         Note:
             The model expects square input images whose size matches
-            config.input_size (default 105).  The encoder includes batch
-            normalization layers by default, unlike the autoencoder version.
+            config.input_size (default 105).
         """
         super().__init__()
         if config is None:
@@ -276,11 +306,13 @@ class DeepFont(nn.Module):
             strides=config.encoder_strides,
             paddings=config.encoder_paddings,
             pool_kernel_size=config.pool_kernel_size,
-            use_batch_norm=config.use_encoder_batch_norm,
+            norm_type=config.encoder_norm_type,
         )
 
         # Additional conv layers
         conv_layers: list[nn.Module] = []
+        # Paper Fig. 5 shows Conv3/4/5 with no normalization layer between
+        # them, so conv_part is fixed as Conv2d -> ReLU per stage.
         prev_ch = config.encoder_channels[-1]
         for _ in range(config.num_conv_layers):
             conv_layers.append(
@@ -291,8 +323,6 @@ class DeepFont(nn.Module):
                     padding="same",
                 )
             )
-            if config.use_conv_batch_norm:
-                conv_layers.append(nn.BatchNorm2d(config.conv_channels))
             conv_layers.append(nn.ReLU())
             prev_ch = config.conv_channels
         self.conv_part = nn.Sequential(*conv_layers)
@@ -357,8 +387,8 @@ class DeepFont(nn.Module):
         pretrained features.
 
         The weight mapping handles the structural differences between DeepFontAE
-        (with or without batch norm) and DeepFont (with or without batch norm) by
-        computing the correct index offsets based on whether batch norm is present.
+        (no norm layers) and DeepFont (optionally with norm layers) by computing
+        the correct index offsets based on the classifier's encoder_norm_type.
 
         Args:
             encoder_weights_file: Path to the saved autoencoder model checkpoint (.pt or
@@ -401,14 +431,15 @@ class DeepFont(nn.Module):
 
         # Compute the layer index mapping between the source AE encoder and this
         # classifier's encoder.  Each encoder stage has a variable number of
-        # sub-layers depending on whether batch norm is used:
-        #   without BN: Conv2d, MaxPool2d, ReLU  -> 3 sub-layers per stage
-        #   with BN:    Conv2d, BatchNorm2d, MaxPool2d, ReLU  -> 4 sub-layers per stage
+        # sub-layers depending on the chosen norm:
+        #   none : Conv2d, MaxPool2d, ReLU                       -> 3 sub-layers per stage
+        #   lrn  : Conv2d, LocalResponseNorm, MaxPool2d, ReLU    -> 4 sub-layers per stage
+        #   batch: Conv2d, BatchNorm2d, MaxPool2d, ReLU          -> 4 sub-layers per stage
         #
         # We need to detect the source layout from the checkpoint keys and map
         # Conv2d weight/bias keys to the correct indices in this encoder.
         src_conv_indices = sorted({int(k.split(".")[0]) for k in state_dict})
-        dst_stride = 4 if self.config.use_encoder_batch_norm else 3
+        dst_stride = 3 if self.config.encoder_norm_type == "none" else 4
 
         layer_map: dict[str, str] = {}
         for stage_i, src_idx in enumerate(src_conv_indices):
