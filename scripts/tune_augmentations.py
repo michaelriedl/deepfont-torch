@@ -228,7 +228,8 @@ SEARCH_SPACE: dict[str, tuple[float, float]] = {
     "noise_prob": (0.0, 1.0),
     "gradient_prob": (0.0, 1.0),
     # Geometric
-    "scale_limit": (0.0, 0.6),
+    "aspect_ratio_low": (1.0, 3.5),
+    "aspect_ratio_width": (0.0, 2.0),
     "rotate_abs": (0.0, 5.0),
     "shear_abs": (0.0, 10.0),
     # Blur
@@ -289,6 +290,8 @@ def sample_synthetic_config(
     """
     drawn = {name: _suggest(trial, name, fixed_params) for name in SEARCH_SPACE}
 
+    ar_low = drawn["aspect_ratio_low"]
+    ar_high = ar_low + drawn["aspect_ratio_width"]
     rotate_abs = drawn["rotate_abs"]
     shear_abs = drawn["shear_abs"]
     blur_low, blur_width = drawn["blur_low"], drawn["blur_width"]
@@ -299,7 +302,8 @@ def sample_synthetic_config(
     a_low, a_width = drawn["grad_a_low"], drawn["grad_a_width"]
 
     return SyntheticAugmentationConfig(
-        scale_limit=drawn["scale_limit"],
+        aspect_ratio_low=ar_low,
+        aspect_ratio_high=ar_high,
         rotate_bounds=_ordered_pair(-rotate_abs, rotate_abs),
         shear_bounds=_ordered_pair(-shear_abs, shear_abs),
         blur_limit=_ordered_pair(blur_low, blur_low + blur_width),
