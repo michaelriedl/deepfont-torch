@@ -1,7 +1,7 @@
 # @package _global_
 
 # Bayesian search (via Optuna's TPE sampler) over the synthetic-image
-# augmentation hyperparameters, optimizing the MMD distance between
+# augmentation hyperparameters, optimizing the Maximum Mean Discrepancy (MMD) distance between
 # real and augmented-synthetic image features extracted from a frozen
 # pretrained model.
 
@@ -33,7 +33,7 @@ n_real_samples: 1024
 n_synthetic_samples: 1024
 
 # Number of independent augmented copies per synthetic image per trial.
-# More copies = lower MMD variance per trial at the cost of compute.
+# More copies = lower MMD (Maximum Mean Discrepancy) variance per trial at the cost of compute.
 augmentations_per_image: 1
 
 # Reproducibility for the held-out image sample (not for the augmentations).
@@ -57,7 +57,7 @@ fixed_params:
   rot_flip_prob: 0.0
   invert_prob: 0.0
 
-# RBF MMD bandwidth. "median" uses the median pairwise distance heuristic on the
+# RBF kernel bandwidth for MMD (Maximum Mean Discrepancy). "median" uses the median pairwise distance heuristic on the
 # real features; otherwise pass a positive float.
 mmd_sigma: "median"
 

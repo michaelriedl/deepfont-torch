@@ -1,7 +1,7 @@
 """Tune the synthetic-image augmentation pipeline against a pretrained feature space.
 
 Runs an Optuna study (TPE sampler) over the hyperparameters of
-SyntheticAugmentationConfig, minimizing the MMD distance between real and
+SyntheticAugmentationConfig, minimizing the Maximum Mean Discrepancy (MMD) distance between real and
 augmented-synthetic image features extracted from a frozen torchvision
 backbone (e.g. AlexNet).
 
@@ -184,7 +184,7 @@ class FrozenFeatureExtractor:
         return torch.cat(feats, dim=0)
 
 
-# MMD
+# Maximum Mean Discrepancy (MMD)
 
 
 def median_heuristic_sigma(features: torch.Tensor, max_pairs: int = 5000) -> float:
@@ -437,7 +437,7 @@ def main(cfg: DictConfig) -> None:
     )
     study.optimize(objective, n_trials=cfg.n_trials)
 
-    logger.info("Best MMD: %.6f", study.best_value)
+    logger.info("Best MMD (Maximum Mean Discrepancy): %.6f", study.best_value)
     logger.info("Best params:\n%s", json.dumps(study.best_params, indent=2))
 
     # Re-materialize the best config (FixedTrial needs every search-space key,
