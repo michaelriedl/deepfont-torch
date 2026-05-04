@@ -122,7 +122,7 @@ class TestPretrainCacheRoundTrip:
     def test_cached_raw_images_match_uncached(self, pretrain_dataset):
         """Every cached image's raw pixels must equal the uncached load."""
         # Load uncached references
-        uncached = [pretrain_dataset._load_image(i) for i in range(len(pretrain_dataset))]
+        uncached = [pretrain_dataset.load_raw_image(i) for i in range(len(pretrain_dataset))]
 
         pretrain_dataset.cache_images(len(pretrain_dataset))
         assert pretrain_dataset.num_cached_images == len(pretrain_dataset)
@@ -136,7 +136,7 @@ class TestPretrainCacheRoundTrip:
     def test_partial_cache_matches(self, pretrain_dataset):
         """Caching fewer images than the dataset still works correctly."""
         n_cache = 5
-        uncached = [pretrain_dataset._load_image(i) for i in range(n_cache)]
+        uncached = [pretrain_dataset.load_raw_image(i) for i in range(n_cache)]
 
         pretrain_dataset.cache_images(n_cache)
         assert pretrain_dataset.num_cached_images == n_cache
@@ -183,7 +183,7 @@ class TestPretrainCacheRoundTrip:
         train_set, val_set = pretrain_dataset.split_data_random(0.8)
 
         # Load uncached from train split
-        uncached = [train_set._load_image(i) for i in range(len(train_set))]
+        uncached = [train_set.load_raw_image(i) for i in range(len(train_set))]
 
         train_set.cache_images(len(train_set))
 
@@ -199,7 +199,7 @@ class TestFinetuneCacheRoundTrip:
 
     def test_cached_raw_images_match_uncached(self, finetune_dataset):
         """Every cached image's raw pixels must equal the uncached load."""
-        uncached = [finetune_dataset._load_image(i) for i in range(len(finetune_dataset))]
+        uncached = [finetune_dataset.load_raw_image(i) for i in range(len(finetune_dataset))]
 
         finetune_dataset.cache_images(len(finetune_dataset))
         assert finetune_dataset.num_cached_images == len(finetune_dataset)
@@ -221,7 +221,7 @@ class TestFinetuneCacheRoundTrip:
         """Caching after stratified split works correctly."""
         train_set, val_set = finetune_dataset.split_data_random(0.8)
 
-        uncached = [train_set._load_image(i) for i in range(len(train_set))]
+        uncached = [train_set.load_raw_image(i) for i in range(len(train_set))]
 
         train_set.cache_images(len(train_set))
 

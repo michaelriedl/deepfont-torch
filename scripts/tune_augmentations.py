@@ -10,7 +10,6 @@ Usage:
     python scripts/tune_augmentations.py n_trials=20 feature_extractor.model_name=resnet50
 """
 
-import io
 import os
 import json
 import logging
@@ -22,22 +21,19 @@ import hydra
 import numpy as np
 import torch
 import optuna
-import pandas as pd
 import torch.nn.functional as functional
-from PIL import Image, ImageFile, PngImagePlugin
 from omegaconf import OmegaConf, DictConfig
 from torchvision import models
 from torchvision.models.feature_extraction import create_feature_extractor
 
-# Match the relaxations applied in deepfont.data.datasets so real-image PNGs
-# with oversized iCCP chunks or truncated streams still decode.
-PngImagePlugin.MAX_TEXT_CHUNK = 1048576 * 10  # ty: ignore[invalid-assignment]
-ImageFile.LOAD_TRUNCATED_IMAGES = True  # ty: ignore[invalid-assignment]
-
 # Auto-detect project root from script location (scripts/ -> parent).
 os.environ.setdefault("PROJECT_ROOT", str(Path(__file__).resolve().parent.parent))
 
-from deepfont.data.bcf import BCFStoreFile
+# Importing deepfont.data.datasets sets PIL's MAX_TEXT_CHUNK and
+# LOAD_TRUNCATED_IMAGES so real-image PNGs with oversized iCCP chunks or
+# truncated streams still decode here too.
+from deepfont.data.config import PretrainDataConfig
+from deepfont.data.datasets import PretrainData
 from deepfont.data.augmentations import (
     EvalAugmentationConfig,
     EvalAugmentationPipeline,
@@ -62,6 +58,10 @@ def load_raw_images(
 ) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """Sample raw uint8 grayscale arrays for real and synthetic images.
 
+    Delegates manifest parsing, BCF-store construction, and image decoding to
+    PretrainData so the script picks up the offset-indexed BCF fast path and
+    the corrupt-real-image resampling logic for free.
+
     Args:
         manifest_file: Path to the parquet manifest.
         n_real: Number of real images to draw.
@@ -71,40 +71,29 @@ def load_raw_images(
     Returns:
         A tuple (real_images, synthetic_images), each a list of 2D uint8 arrays.
     """
-    rng = np.random.default_rng(seed)
-    manifest_dir = Path(manifest_file).resolve().parent
-    df = pd.read_parquet(manifest_file)
-
-    syn_df = df[df["image_type"] == "synthetic"]
-    real_df = df[df["image_type"] == "real"]
-
-    if len(syn_df) == 0 or len(real_df) == 0:
+    dataset = PretrainData(PretrainDataConfig(manifest_file=manifest_file))
+    if dataset.num_syn_images == 0 or dataset.num_real_images == 0:
         raise ValueError(
             f"Manifest must contain both synthetic and real entries; got "
-            f"{len(syn_df)} synthetic and {len(real_df)} real."
+            f"{dataset.num_syn_images} synthetic and {dataset.num_real_images} real."
         )
 
-    # Synthetic from BCF store. Index by the original bcf_index, not by row
-    # order, since we are sampling a non-contiguous subset.
-    syn_sample = syn_df.sample(n=min(n_synthetic, len(syn_df)), random_state=seed)
-    bcf_path = str(manifest_dir / syn_sample["bcf_file"].iloc[0])
-    bcf_store = BCFStoreFile(bcf_path)
-    syn_indices = syn_sample["bcf_index"].to_numpy(np.int64)
+    rng = np.random.default_rng(seed)
+    syn_pick = rng.choice(
+        dataset.num_syn_images,
+        size=min(n_synthetic, dataset.num_syn_images),
+        replace=False,
+    )
+    real_pick = rng.choice(
+        dataset.num_real_images,
+        size=min(n_real, dataset.num_real_images),
+        replace=False,
+    )
 
-    synthetic_images: list[np.ndarray] = []
-    for idx in syn_indices:
-        img = Image.open(io.BytesIO(bcf_store.get(int(idx)))).convert("L")
-        synthetic_images.append(np.array(img, dtype=np.uint8))
-
-    # Real from filesystem
-    real_paths = [str(manifest_dir / p) for p in real_df["filepath"].dropna().tolist()]
-    real_idx = rng.choice(len(real_paths), size=min(n_real, len(real_paths)), replace=False)
-    real_images: list[np.ndarray] = []
-    for i in real_idx:
-        img = Image.open(real_paths[int(i)]).convert("L")
-        if 0 in img.size or 1 in img.size:
-            continue
-        real_images.append(np.array(img, dtype=np.uint8))
+    synthetic_images = [dataset.load_raw_image(int(i))[0].numpy() for i in syn_pick]
+    real_images = [
+        dataset.load_raw_image(int(dataset.num_syn_images + j))[0].numpy() for j in real_pick
+    ]
 
     logger.info(
         "Loaded %d real and %d synthetic raw images.",
