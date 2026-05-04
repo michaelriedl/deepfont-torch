@@ -1,0 +1,71 @@
+# @package _global_
+
+# Bayesian search (via Optuna's TPE sampler) over the synthetic-image
+# augmentation hyperparameters, optimizing the Maximum Mean Discrepancy (MMD) distance between
+# real and augmented-synthetic image features extracted from a frozen
+# pretrained model.
+
+defaults:
+  - _self_
+  - paths: default
+  - hydra: default
+  - optional local: default
+
+task_name: "tune_augmentations"
+
+tags: ["augmentation_tuning"]
+
+# Manifest with both synthetic and real entries (the pretrain manifest already mixes them).
+manifest_file: "${paths.data_dir}manifests/pretrain.parquet"
+
+# Frozen feature extractor.
+feature_extractor:
+  # torchvision model name. Currently supports: alexnet, vgg16, resnet50.
+  model_name: "alexnet"
+  # Named module to tap. For alexnet: "features" (post-conv stack) or "avgpool".
+  # For resnet50: "layer3" or "avgpool". For vgg16: "features" or "avgpool".
+  layer: "features"
+  # Spatial input size fed to the pretrained model. AlexNet/VGG expect 224.
+  input_size: 224
+
+# How many images to sample for each domain. Held constant across trials.
+n_real_samples: 1024
+n_synthetic_samples: 1024
+
+# Number of independent augmented copies per synthetic image per trial.
+# More copies = lower MMD (Maximum Mean Discrepancy) variance per trial at the cost of compute.
+augmentations_per_image: 1
+
+# Reproducibility for the held-out image sample (not for the augmentations).
+sample_seed: 0
+
+# Optuna search.
+n_trials: 200
+study_name: "deepfont_aug_tuning"
+# SQLite storage URL. Set null to use in-memory storage (study not resumable).
+storage: "sqlite:///${paths.log_dir}/${task_name}/optuna.db"
+# Resume an existing study with the same name if the storage already contains it.
+load_if_exists: true
+
+# Pin specific search-space parameters to constants. Keys must match the
+# names in scripts/tune_augmentations.py SEARCH_SPACE; pinned values must
+# fall inside that key's range. Defaults disable the text-destructive
+# RandomRotate90/HorizontalFlip/VerticalFlip and InvertImg steps, which a
+# non-text-aware feature extractor (e.g. ImageNet AlexNet) cannot penalize
+# correctly. Override on the command line, e.g. fixed_params.blur_prob=1.0.
+fixed_params:
+  rot_flip_prob: 0.0
+  invert_prob: 0.0
+
+# RBF kernel bandwidth for MMD (Maximum Mean Discrepancy). "median" uses the median pairwise distance heuristic on the
+# real features; otherwise pass a positive float.
+mmd_sigma: "median"
+
+# Compute device. "auto" picks cuda when available, otherwise cpu.
+device: "auto"
+
+# Batch size used while extracting features. Tune to fit GPU memory.
+feature_batch_size: 64
+
+# Where to dump the best-params YAML at the end of the study.
+output_yaml: "${paths.output_dir}/synthetic_tuned.yaml"

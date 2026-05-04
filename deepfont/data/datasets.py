@@ -49,7 +49,7 @@ class BaseDataset(Dataset):
     """Base class providing shared caching, normalization, and BCF-store helpers.
 
     Subclasses must set ``self.image_normalization`` before calling any helper
-    that depends on it, and must implement ``_load_image``.
+    that depends on it, and must implement ``load_raw_image``.
     """
 
     image_normalization: str
@@ -58,7 +58,9 @@ class BaseDataset(Dataset):
     def __len__(self) -> int: ...
 
     @abstractmethod
-    def _load_image(self, index: int) -> torch.Tensor: ...
+    def load_raw_image(self, index: int) -> torch.Tensor:
+        """Load the raw, unaugmented image at ``index`` as a (1, H, W) uint8 tensor."""
+        ...
 
     @staticmethod
     def _build_bcf_store(bcf_path: str, df: pd.DataFrame) -> BCFStoreFile:
@@ -121,7 +123,7 @@ class BaseDataset(Dataset):
             # into the cache buffer (which would also trigger COW copies
             # in forked DataLoader workers).
             return self._cache_data[offset : offset + h * w].reshape(1, h, w).clone()
-        return self._load_image(index)
+        return self.load_raw_image(index)
 
     def cache_images(self, num_images_to_cache: int) -> None:
         """Preloads images into memory for faster iteration during training.
@@ -157,7 +159,7 @@ class BaseDataset(Dataset):
         shapes = []
         total_pixels = 0
         for index in range(self.num_cached_images):
-            image = self._load_image(index)
+            image = self.load_raw_image(index)
             h, w = image.shape[1], image.shape[2]
             shapes.append((h, w))
             total_pixels += h * w
@@ -173,7 +175,7 @@ class BaseDataset(Dataset):
         self._cache_data = torch.empty(total_pixels, dtype=torch.uint8)
         # Second pass: load images directly into the flat buffer.
         for index in range(self.num_cached_images):
-            image = self._load_image(index)
+            image = self.load_raw_image(index)
             o = self._cache_offsets[index].item()
             h, w = shapes[index]
             self._cache_data[o : o + h * w] = image.reshape(-1)
@@ -310,7 +312,7 @@ class PretrainData(BaseDataset):
         is_real = torch.tensor(index >= self.num_syn_images, dtype=torch.bool)
         return image, is_real
 
-    def _load_image(self, index: int) -> torch.Tensor:
+    def load_raw_image(self, index: int) -> torch.Tensor:
         """Loads a raw image from disk without augmentation.
 
         Retrieves an image from either the BCF store (for synthetic images) or
@@ -588,7 +590,7 @@ class FinetuneData(BaseDataset):
         label = torch.tensor(int(self.labels[index])).long()
         return image, label
 
-    def _load_image(self, index: int) -> torch.Tensor:
+    def load_raw_image(self, index: int) -> torch.Tensor:
         """Loads a raw synthetic image from the BCF store.
 
         Retrieves an image at the specified index, converts it to grayscale,
@@ -767,7 +769,7 @@ class EvalData(BaseDataset):
         """
         return self.num_images
 
-    def _load_image(self, index: int) -> torch.Tensor:
+    def load_raw_image(self, index: int) -> torch.Tensor:
         raise NotImplementedError
 
     def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
