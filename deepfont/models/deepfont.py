@@ -3,6 +3,7 @@ from typing import Literal
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F  # noqa: N812
 
 from .config import DeepFontConfig, DeepFontAEConfig
 
@@ -35,6 +36,80 @@ def _make_norm_layer(
     if norm_type == "batch":
         return nn.BatchNorm2d(num_channels)
     raise ValueError(f"Unknown norm_type '{norm_type}'. Expected 'none', 'lrn', or 'batch'.")
+
+
+class TiedConvTranspose2d(nn.Module):
+    """Transposed convolution whose weight is tied to a paired encoder Conv2d.
+
+    The decoder layer reuses the weight tensor of an encoder Conv2d via
+    F.conv_transpose2d at forward time, constraining the encoder filter and
+    decoder filter to be transposes of each other. This follows the original
+    Masci 2011 stacked convolutional auto-encoder formulation cited by the
+    DeepFont paper.
+
+    A Conv2d weight has shape (out_channels, in_channels, kH, kW), which is
+    exactly the layout F.conv_transpose2d expects when going in the reverse
+    direction (in_channels and out_channels swap roles for the transpose), so
+    no reshaping is needed.
+
+    The decoder layer still owns its own bias parameter; only the weight is
+    shared. Gradients flow back into the encoder Conv2d's weight from both
+    the encoder and decoder paths during backward, which keeps the tying
+    consistent through training.
+
+    Attributes:
+        encoder_conv: The encoder Conv2d whose weight is reused. Stored as a
+            plain attribute (not a child module) to avoid the encoder weight
+            being registered twice in the decoder's state_dict.
+        stride: Stride for the transposed convolution.
+        padding: Padding for the transposed convolution.
+        bias: Per-output-channel bias parameter owned by this layer.
+    """
+
+    encoder_conv: nn.Conv2d
+
+    def __init__(self, encoder_conv: nn.Conv2d, stride: int, padding: int):
+        """Initialize a tied transposed convolution paired with an encoder Conv2d.
+
+        Args:
+            encoder_conv: The encoder Conv2d whose weight tensor will be reused
+                as the transposed-conv filter. Its weight shape determines the
+                input and output channel counts of this layer (in_channels and
+                out_channels swap relative to the encoder).
+            stride: Stride for the transposed convolution. Should match the
+                paired encoder Conv2d's stride.
+            padding: Padding for the transposed convolution. Should match the
+                paired encoder Conv2d's padding.
+        """
+        super().__init__()
+        # Avoid registering the encoder Conv2d as a child module so its weight
+        # is not duplicated in this layer's state_dict, but keep a live
+        # reference so weight updates remain visible at forward time.
+        object.__setattr__(self, "encoder_conv", encoder_conv)
+        self.stride = stride
+        self.padding = padding
+        # ConvTranspose2d output channels equal the paired Conv2d's
+        # in_channels because the channel direction flips in the transpose.
+        self.bias = nn.Parameter(torch.zeros(encoder_conv.in_channels))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply the tied transposed convolution to x."""
+        return F.conv_transpose2d(
+            x,
+            self.encoder_conv.weight,
+            bias=self.bias,
+            stride=self.stride,
+            padding=self.padding,
+        )
+
+    def extra_repr(self) -> str:
+        w = self.encoder_conv.weight
+        out_ch, in_ch, kh, kw = w.shape
+        return (
+            f"in_channels={out_ch}, out_channels={in_ch}, "
+            f"kernel_size=({kh}, {kw}), stride={self.stride}, "
+            f"padding={self.padding}, tied=True"
+        )
 
 
 def _build_encoder(
@@ -77,6 +152,11 @@ def _build_encoder(
     return nn.Sequential(*layers)
 
 
+def _encoder_conv_layers(encoder: nn.Sequential) -> list[nn.Conv2d]:
+    """Return the Conv2d layers in encoder order."""
+    return [m for m in encoder if isinstance(m, nn.Conv2d)]
+
+
 def _build_decoder(
     out_channels: int,
     encoder_channels: tuple[int, ...],
@@ -85,6 +165,7 @@ def _build_decoder(
     encoder_paddings: tuple[int, ...],
     pool_kernel_size: int,
     output_activation: str | None,
+    encoder_convs: list[nn.Conv2d] | None = None,
 ) -> nn.Sequential:
     """Build a decoder that mirrors the encoder structure.
 
@@ -92,10 +173,13 @@ def _build_decoder(
     Upsample -> ConvTranspose2d -> ReLU, except the final layer which
     omits the ReLU (or replaces it with the requested output_activation).
 
-    The ConvTranspose2d at each stage uses the same kernel size, stride,
-    and padding as its corresponding encoder Conv2d, which ensures the
-    transpose convolution inverts the spatial transform of the forward
-    convolution.
+    The transposed convolution at each stage uses the same kernel size,
+    stride, and padding as its corresponding encoder Conv2d, which ensures
+    the transpose inverts the spatial transform of the forward convolution.
+
+    When encoder_convs is provided, each decoder stage is built with a
+    TiedConvTranspose2d that reuses the paired encoder Conv2d's weight.
+    Otherwise an independent ConvTranspose2d is used at each stage.
 
     Args:
         out_channels: Number of channels the decoder should produce (typically
@@ -106,6 +190,9 @@ def _build_decoder(
         encoder_paddings: Paddings from the encoder (in encoder order).
         pool_kernel_size: Pool kernel size used in the encoder.
         output_activation: Optional final activation ("sigmoid" or "relu").
+        encoder_convs: When not None, the encoder's Conv2d layers in encoder
+            order. Each decoder stage will tie its weight to the matching
+            encoder Conv2d via TiedConvTranspose2d.
 
     Returns:
         An nn.Sequential module implementing the decoder.
@@ -116,6 +203,14 @@ def _build_decoder(
     reversed_kernel_sizes = list(reversed(encoder_kernel_sizes))
     reversed_strides = list(reversed(encoder_strides))
     reversed_paddings = list(reversed(encoder_paddings))
+    if encoder_convs is not None:
+        if len(encoder_convs) != n_stages:
+            raise ValueError(
+                f"encoder_convs has {len(encoder_convs)} layers but encoder has {n_stages} stages."
+            )
+        reversed_convs = list(reversed(encoder_convs))
+    else:
+        reversed_convs = None
 
     for i in range(n_stages):
         in_ch = reversed_channels[i]
@@ -127,8 +222,11 @@ def _build_decoder(
 
         # Upsample to undo the MaxPool2d
         layers.append(nn.Upsample(scale_factor=pool_kernel_size))
-        # ConvTranspose2d to undo the Conv2d
-        layers.append(nn.ConvTranspose2d(in_ch, target_ch, kernel_size=k, stride=s, padding=p))
+        # Transposed conv (tied or independent) to undo the Conv2d
+        if reversed_convs is not None:
+            layers.append(TiedConvTranspose2d(reversed_convs[i], stride=s, padding=p))
+        else:
+            layers.append(nn.ConvTranspose2d(in_ch, target_ch, kernel_size=k, stride=s, padding=p))
 
         # Add activation (ReLU for intermediate layers, optional for last)
         is_last = i == n_stages - 1
@@ -210,6 +308,7 @@ class DeepFontAE(nn.Module):
             pool_kernel_size=config.pool_kernel_size,
             norm_type="none",
         )
+        encoder_convs = _encoder_conv_layers(self.encoder) if config.tied_weights else None
         self.decoder = _build_decoder(
             out_channels=config.in_channels,
             encoder_channels=config.encoder_channels,
@@ -218,6 +317,7 @@ class DeepFontAE(nn.Module):
             encoder_paddings=config.encoder_paddings,
             pool_kernel_size=config.pool_kernel_size,
             output_activation=config.output_activation,
+            encoder_convs=encoder_convs,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

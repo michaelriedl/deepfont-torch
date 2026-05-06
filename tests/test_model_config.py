@@ -62,6 +62,10 @@ class TestDeepFontAEConfigDefaults:
         """Default pool kernel size is 2."""
         assert DeepFontAEConfig().pool_kernel_size == 2
 
+    def test_tied_weights_default(self):
+        """Default autoencoder ties decoder weights to the encoder."""
+        assert DeepFontAEConfig().tied_weights is True
+
     def test_output_activation_default(self):
         """Default output activation is None (linear output)."""
         assert DeepFontAEConfig().output_activation is None

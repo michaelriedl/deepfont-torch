@@ -97,6 +97,18 @@ class DeepFontAEConfig(BaseModel):
         ge=1,
         description="Kernel size for MaxPool2d applied after each encoder conv stage.",
     )
+    tied_weights: bool = Field(
+        default=True,
+        description=(
+            "If True, the decoder reuses the encoder's Conv2d weights via "
+            "F.conv_transpose2d so that each encoder filter and its matching "
+            "decoder filter are constrained to be transposes of each other. "
+            "This follows the original Masci 2011 stacked convolutional "
+            "auto-encoder formulation cited by the DeepFont paper. The "
+            "decoder still owns its own per-stage bias parameters. When "
+            "False, each decoder stage uses an independent ConvTranspose2d."
+        ),
+    )
 
     # Output
     output_activation: Literal["sigmoid", "relu"] | None = Field(

@@ -16,6 +16,7 @@ encoder_kernel_sizes: [11, 5]
 encoder_strides: [2, 1]
 encoder_paddings: [0, 2]
 pool_kernel_size: 2
+tied_weights: true
 
 # Output
 output_activation: null  # null | "sigmoid" | "relu"

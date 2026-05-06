@@ -19,7 +19,7 @@ import torch.nn as nn
 import pytest
 
 from deepfont.models.config import DeepFontAEConfig, DeepFontConfig
-from deepfont.models.deepfont import DeepFontAE, DeepFont
+from deepfont.models.deepfont import DeepFontAE, DeepFont, TiedConvTranspose2d
 
 # Module-level constants
 
@@ -218,8 +218,12 @@ class TestDeepFontAEArchitecture:
         assert _count_layer_types(model.encoder, nn.LocalResponseNorm) == 0
 
     def test_decoder_has_conv_transpose_layers(self):
-        """Decoder contains ConvTranspose2d layers matching encoder stages."""
-        config = _small_ae_config()
+        """Decoder contains ConvTranspose2d layers matching encoder stages.
+
+        Uses tied_weights=False because the default tied variant uses
+        TiedConvTranspose2d, not nn.ConvTranspose2d.
+        """
+        config = _small_ae_config(tied_weights=False)
         model = DeepFontAE(config)
         n_deconv = _count_layer_types(model.decoder, nn.ConvTranspose2d)
         assert n_deconv == len(config.encoder_channels)
@@ -259,15 +263,193 @@ class TestDeepFontAEArchitecture:
             encoder_kernel_sizes=(7, 5, 3),
             encoder_strides=(1, 1, 1),
             encoder_paddings=(3, 2, 1),
+            tied_weights=False,
         )
         model = DeepFontAE(config)
         assert _count_layer_types(model.encoder, nn.Conv2d) == 3
         assert _count_layer_types(model.decoder, nn.ConvTranspose2d) == 3
 
+    def test_three_stage_encoder_decoder_tied(self):
+        """Three-stage config with tied weights produces matching tied layers."""
+        config = DeepFontAEConfig(
+            encoder_channels=(32, 64, 128),
+            encoder_kernel_sizes=(7, 5, 3),
+            encoder_strides=(1, 1, 1),
+            encoder_paddings=(3, 2, 1),
+            tied_weights=True,
+        )
+        model = DeepFontAE(config)
+        assert _count_layer_types(model.encoder, nn.Conv2d) == 3
+        assert _count_layer_types(model.decoder, TiedConvTranspose2d) == 3
+        # Tied decoder must not introduce any independent ConvTranspose2d.
+        assert _count_layer_types(model.decoder, nn.ConvTranspose2d) == 0
+
     def test_all_parameters_are_trainable(self):
         """All parameters require gradients by default."""
         model = DeepFontAE()
         assert all(p.requires_grad for p in model.parameters())
+
+
+class TestDeepFontAETiedWeights:
+    """Weight tying between the encoder Conv2d layers and the decoder."""
+
+    def test_tied_default_is_true(self):
+        """The tied_weights field defaults to True."""
+        assert DeepFontAEConfig().tied_weights is True
+
+    def test_tied_decoder_uses_tied_modules(self):
+        """When tied_weights=True the decoder uses TiedConvTranspose2d."""
+        model = DeepFontAE(_small_ae_config(tied_weights=True))
+        n_tied = _count_layer_types(model.decoder, TiedConvTranspose2d)
+        n_untied = _count_layer_types(model.decoder, nn.ConvTranspose2d)
+        assert n_tied == len(model.config.encoder_channels)
+        assert n_untied == 0
+
+    def test_untied_decoder_uses_independent_modules(self):
+        """When tied_weights=False the decoder uses nn.ConvTranspose2d."""
+        model = DeepFontAE(_small_ae_config(tied_weights=False))
+        n_tied = _count_layer_types(model.decoder, TiedConvTranspose2d)
+        n_untied = _count_layer_types(model.decoder, nn.ConvTranspose2d)
+        assert n_tied == 0
+        assert n_untied == len(model.config.encoder_channels)
+
+    def test_decoder_weights_share_storage_with_encoder(self):
+        """Each tied decoder layer's weight is the same tensor as its encoder Conv2d weight."""
+        model = DeepFontAE(_small_ae_config(tied_weights=True))
+        encoder_convs = [m for m in model.encoder if isinstance(m, nn.Conv2d)]
+        tied_layers = [m for m in model.decoder if isinstance(m, TiedConvTranspose2d)]
+        # Decoder mirrors the encoder, so pair encoder[i] with decoder[-1-i].
+        assert len(encoder_convs) == len(tied_layers)
+        for enc, dec in zip(encoder_convs, reversed(tied_layers), strict=True):
+            assert dec.encoder_conv is enc
+            assert dec.encoder_conv.weight.data_ptr() == enc.weight.data_ptr()
+
+    def test_tied_decoder_has_no_weight_in_state_dict(self):
+        """Tied decoder layers contribute only their bias to the state_dict."""
+        model = DeepFontAE(_small_ae_config(tied_weights=True))
+        decoder_keys = [k for k in model.state_dict() if k.startswith("decoder.")]
+        # Tied decoder must not duplicate any encoder weights.
+        assert not any(k.endswith(".weight") for k in decoder_keys)
+        # One bias per encoder stage.
+        bias_keys = [k for k in decoder_keys if k.endswith(".bias")]
+        assert len(bias_keys) == len(model.config.encoder_channels)
+
+    def test_tied_model_has_fewer_parameters_than_untied(self):
+        """Tying reduces the parameter count by the decoder weight sizes."""
+        tied = DeepFontAE(_small_ae_config(tied_weights=True))
+        untied = DeepFontAE(_small_ae_config(tied_weights=False))
+        n_tied = sum(p.numel() for p in tied.parameters())
+        n_untied = sum(p.numel() for p in untied.parameters())
+        # The savings equal the encoder Conv2d weight tensor sizes.
+        encoder_conv_weights = sum(
+            m.weight.numel() for m in tied.encoder if isinstance(m, nn.Conv2d)
+        )
+        assert n_untied - n_tied == encoder_conv_weights
+
+    def test_tied_forward_matches_functional_reference(self):
+        """The tied decoder produces the same output as a manual F.conv_transpose2d call."""
+        import torch.nn.functional as F
+
+        torch.manual_seed(0)
+        model = DeepFontAE(_small_ae_config(tied_weights=True))
+        model.eval()
+
+        # Build the reference path manually using each tied layer's encoder weight.
+        x = _ae_input(batch_size=2)
+        with torch.no_grad():
+            actual = model(x)
+            # Re-run forward step by step using F.conv_transpose2d directly.
+            h = model.encoder(x)
+            for m in model.decoder:
+                if isinstance(m, TiedConvTranspose2d):
+                    h = F.conv_transpose2d(
+                        h, m.encoder_conv.weight, m.bias,
+                        stride=m.stride, padding=m.padding,
+                    )
+                else:
+                    h = m(h)
+        assert torch.allclose(actual, h, atol=1e-6)
+
+    def test_encoder_update_visible_to_decoder(self):
+        """Mutating an encoder Conv2d weight changes the decoder's effective filter."""
+        model = DeepFontAE(_small_ae_config(tied_weights=True))
+        model.eval()
+
+        x = _ae_input(batch_size=1)
+        with torch.no_grad():
+            before = model(x).clone()
+            # Perturb the first encoder Conv2d weight in place.
+            first_conv = next(m for m in model.encoder if isinstance(m, nn.Conv2d))
+            first_conv.weight.add_(0.5)
+            after = model(x)
+        # The decoder reads the encoder weight at forward time, so the output
+        # must change when the encoder weight changes.
+        assert not torch.allclose(before, after)
+
+    def test_gradient_accumulates_into_encoder_weight_from_decoder(self):
+        """Backward through the decoder produces gradients on the tied encoder weights."""
+        torch.manual_seed(0)
+        model = DeepFontAE(_small_ae_config(tied_weights=True))
+        model.train()
+
+        # Zero all grads, run forward + backward, verify the first encoder
+        # Conv2d weight has a gradient (it could only come via the decoder
+        # since the encoder output is unused as a final loss target here).
+        for p in model.parameters():
+            p.grad = None
+
+        x = _ae_input(batch_size=2)
+        out = model(x)
+        loss = (out ** 2).mean()
+        loss.backward()
+
+        for m in model.encoder:
+            if isinstance(m, nn.Conv2d):
+                assert m.weight.grad is not None
+                assert torch.isfinite(m.weight.grad).all()
+                assert m.weight.grad.abs().sum() > 0
+
+    def test_state_dict_round_trip_preserves_tying(self):
+        """Saving and reloading the tied model keeps the decoder tied to the encoder."""
+        src = DeepFontAE(_small_ae_config(tied_weights=True))
+        dst = DeepFontAE(_small_ae_config(tied_weights=True))
+        dst.load_state_dict(src.state_dict())
+
+        encoder_convs = [m for m in dst.encoder if isinstance(m, nn.Conv2d)]
+        tied_layers = [m for m in dst.decoder if isinstance(m, TiedConvTranspose2d)]
+        for enc, dec in zip(encoder_convs, reversed(tied_layers), strict=True):
+            assert dec.encoder_conv is enc
+
+        # Encoder weights match the source.
+        for src_conv, dst_conv in zip(
+            (m for m in src.encoder if isinstance(m, nn.Conv2d)),
+            encoder_convs,
+            strict=True,
+        ):
+            assert torch.equal(src_conv.weight.data, dst_conv.weight.data)
+
+    def test_tied_output_shape_matches_input(self):
+        """Tied autoencoder reconstructs the same spatial dimensions as input."""
+        model = DeepFontAE(_small_ae_config(tied_weights=True))
+        model.eval()
+        x = _ae_input()
+        with torch.no_grad():
+            out = model(x)
+        assert out.shape == x.shape
+        assert torch.isfinite(out).all()
+
+    def test_loaded_into_classifier_with_tied_ae(self, tmp_path):
+        """Tied AE checkpoints still load into the DeepFont classifier."""
+        weights_path = str(tmp_path / "ae.pt")
+        ae = DeepFontAE(_small_ae_config(tied_weights=True))
+        torch.save(ae.state_dict(), weights_path)
+
+        model = DeepFont(_small_df_config())
+        model.load_encoder_weights(weights_path)
+        # First conv weight should match the AE's first encoder conv weight.
+        df_conv0 = model.encoder[0].weight.data
+        ae_conv0 = next(m for m in ae.encoder if isinstance(m, nn.Conv2d)).weight.data
+        assert torch.equal(df_conv0, ae_conv0)
 
 
 class TestDeepFontInstantiation:
