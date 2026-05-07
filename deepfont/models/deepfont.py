@@ -120,12 +120,14 @@ def _build_encoder(
     paddings: tuple[int, ...],
     pool_kernel_size: int,
     norm_type: Literal["none", "lrn", "batch"],
+    pool_after_last_stage: bool = True,
 ) -> nn.Sequential:
     """Build a multi-stage convolutional encoder.
 
-    Each stage consists of Conv2d -> [Norm] -> MaxPool2d -> ReLU, where the
+    Each stage consists of Conv2d -> [Norm] -> [MaxPool2d] -> ReLU, where the
     Norm layer is LocalResponseNorm, BatchNorm2d, or omitted depending on
-    norm_type. The 'lrn' option matches the paper's Fig. 5 architecture.
+    norm_type. The 'lrn' option matches the paper's Fig. 5 architecture. The
+    final stage's MaxPool2d can be skipped via pool_after_last_stage.
 
     Args:
         in_channels: Number of channels in the input image.
@@ -135,18 +137,26 @@ def _build_encoder(
         paddings: Padding for each stage's Conv2d.
         pool_kernel_size: Kernel size for MaxPool2d after each stage.
         norm_type: Normalization layer type. One of 'none', 'lrn', 'batch'.
+        pool_after_last_stage: When False, the final stage omits its MaxPool2d.
+            Used for the SCAE encoder per the DeepFont paper, where the trailing
+            pool only appears in the classifier.
 
     Returns:
         An nn.Sequential module implementing the encoder.
     """
     layers: list[nn.Module] = []
     prev_ch = in_channels
-    for ch, k, s, p in zip(channels, kernel_sizes, strides, paddings, strict=True):
+    n_stages = len(channels)
+    for stage_i, (ch, k, s, p) in enumerate(
+        zip(channels, kernel_sizes, strides, paddings, strict=True)
+    ):
         layers.append(nn.Conv2d(prev_ch, ch, kernel_size=k, stride=s, padding=p))
         norm_layer = _make_norm_layer(norm_type, ch)
         if norm_layer is not None:
             layers.append(norm_layer)
-        layers.append(nn.MaxPool2d(kernel_size=pool_kernel_size))
+        is_last = stage_i == n_stages - 1
+        if not is_last or pool_after_last_stage:
+            layers.append(nn.MaxPool2d(kernel_size=pool_kernel_size))
         layers.append(nn.ReLU())
         prev_ch = ch
     return nn.Sequential(*layers)
@@ -166,6 +176,7 @@ def _build_decoder(
     pool_kernel_size: int,
     output_activation: str | None,
     encoder_convs: list[nn.Conv2d] | None = None,
+    pool_after_last_encoder_stage: bool = True,
 ) -> nn.Sequential:
     """Build a decoder that mirrors the encoder structure.
 
@@ -220,8 +231,12 @@ def _build_decoder(
         s = reversed_strides[i]
         p = reversed_paddings[i]
 
-        # Upsample to undo the MaxPool2d
-        layers.append(nn.Upsample(scale_factor=pool_kernel_size))
+        # Upsample to undo the MaxPool2d. The first decoder stage corresponds to
+        # the last encoder stage, so it is skipped when the encoder omits its
+        # trailing pool.
+        is_first_stage = i == 0
+        if not (is_first_stage and not pool_after_last_encoder_stage):
+            layers.append(nn.Upsample(scale_factor=pool_kernel_size))
         # Transposed conv (tied or independent) to undo the Conv2d
         if reversed_convs is not None:
             layers.append(TiedConvTranspose2d(reversed_convs[i], stride=s, padding=p))
@@ -307,6 +322,7 @@ class DeepFontAE(nn.Module):
             paddings=config.encoder_paddings,
             pool_kernel_size=config.pool_kernel_size,
             norm_type="none",
+            pool_after_last_stage=config.pool_after_last_stage,
         )
         encoder_convs = _encoder_conv_layers(self.encoder) if config.tied_weights else None
         self.decoder = _build_decoder(
@@ -318,6 +334,7 @@ class DeepFontAE(nn.Module):
             pool_kernel_size=config.pool_kernel_size,
             output_activation=config.output_activation,
             encoder_convs=encoder_convs,
+            pool_after_last_encoder_stage=config.pool_after_last_stage,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
