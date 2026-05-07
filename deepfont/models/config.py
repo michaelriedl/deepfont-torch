@@ -97,6 +97,16 @@ class DeepFontAEConfig(BaseModel):
         ge=1,
         description="Kernel size for MaxPool2d applied after each encoder conv stage.",
     )
+    pool_after_last_stage: bool = Field(
+        default=False,
+        description=(
+            "Whether to apply MaxPool2d after the final encoder convolution. The "
+            "DeepFont paper's SCAE (Fig. 4) keeps the second conv's activations at "
+            "full resolution; the trailing pool is only added in the classifier. "
+            "Default False matches the paper. The decoder mirrors this by skipping "
+            "its first Upsample so the spatial inversion stays consistent."
+        ),
+    )
     tied_weights: bool = Field(
         default=True,
         description=(

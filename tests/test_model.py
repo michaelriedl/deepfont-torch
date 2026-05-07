@@ -198,8 +198,20 @@ class TestDeepFontAEArchitecture:
         assert n_conv == len(config.encoder_channels)
 
     def test_encoder_has_pool_layers(self):
-        """Encoder contains a MaxPool2d per stage."""
+        """Encoder contains one MaxPool2d per stage except the final stage.
+
+        The DeepFont SCAE (Fig. 4) keeps the second conv at full resolution;
+        the trailing pool only appears in the classifier. ``pool_after_last_stage``
+        defaults to False to match that.
+        """
         config = _small_ae_config()
+        model = DeepFontAE(config)
+        n_pool = _count_layer_types(model.encoder, nn.MaxPool2d)
+        assert n_pool == len(config.encoder_channels) - 1
+
+    def test_encoder_pool_after_last_stage_true(self):
+        """Setting pool_after_last_stage=True restores a MaxPool2d per stage."""
+        config = _small_ae_config(pool_after_last_stage=True)
         model = DeepFontAE(config)
         n_pool = _count_layer_types(model.encoder, nn.MaxPool2d)
         assert n_pool == len(config.encoder_channels)
@@ -229,8 +241,19 @@ class TestDeepFontAEArchitecture:
         assert n_deconv == len(config.encoder_channels)
 
     def test_decoder_has_upsample_layers(self):
-        """Decoder contains Upsample layers matching encoder stages."""
+        """Decoder Upsample count mirrors the encoder's pool count.
+
+        With pool_after_last_stage=False (default), the encoder has
+        n_stages - 1 pools so the decoder has n_stages - 1 Upsamples.
+        """
         config = _small_ae_config()
+        model = DeepFontAE(config)
+        n_up = _count_layer_types(model.decoder, nn.Upsample)
+        assert n_up == len(config.encoder_channels) - 1
+
+    def test_decoder_upsample_count_when_trailing_pool_enabled(self):
+        """One Upsample per encoder stage when pool_after_last_stage=True."""
+        config = _small_ae_config(pool_after_last_stage=True)
         model = DeepFontAE(config)
         n_up = _count_layer_types(model.decoder, nn.Upsample)
         assert n_up == len(config.encoder_channels)
@@ -363,8 +386,11 @@ class TestDeepFontAETiedWeights:
             for m in model.decoder:
                 if isinstance(m, TiedConvTranspose2d):
                     h = F.conv_transpose2d(
-                        h, m.encoder_conv.weight, m.bias,
-                        stride=m.stride, padding=m.padding,
+                        h,
+                        m.encoder_conv.weight,
+                        m.bias,
+                        stride=m.stride,
+                        padding=m.padding,
                     )
                 else:
                     h = m(h)
@@ -400,7 +426,7 @@ class TestDeepFontAETiedWeights:
 
         x = _ae_input(batch_size=2)
         out = model(x)
-        loss = (out ** 2).mean()
+        loss = (out**2).mean()
         loss.backward()
 
         for m in model.encoder:
